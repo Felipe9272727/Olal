@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Olal OS</title>
+<style>
+  html,body{margin:0;height:100%;background:#05070c;overflow:hidden;
+            font-family:system-ui,sans-serif;touch-action:none;}
+  #wrap{display:flex;align-items:center;justify-content:center;height:100%;}
+  #screen_container canvas{display:block;image-rendering:pixelated;
+            box-shadow:0 0 40px #0008;border-radius:6px;}
+  #screen_container div{display:none;}   /* esconde a camada de texto do v86 */
+  #status{position:fixed;top:0;left:0;right:0;color:#6ee7b7;
+            font:12px monospace;padding:6px;background:#000a;text-align:center;z-index:9;}
+</style>
+</head>
+<body>
+<div id="status">carregando Olal OS...</div>
+<div id="wrap"><div id="screen_container"><canvas></canvas></div></div>
+
+<script src="https://copy.sh/v86/build/libv86.js"></script>
+<script>
+const GW = 480, GH = 800;                 /* resolucao do Olal OS */
+const CDN = "https://copy.sh/v86";
+const V86CLASS = window.V86 || window.V86Starter;
+
+const emulator = new V86CLASS({
+    wasm_path: CDN + "/build/v86.wasm",
+    bios:     { url: CDN + "/bios/seabios.bin" },
+    vga_bios: { url: CDN + "/bios/vgabios.bin" },
+    hda:      { url: "olal.img" },
+    memory_size: 64 * 1024 * 1024,
+    vga_memory_size: 16 * 1024 * 1024,
+    screen_container: document.getElementById("screen_container"),
+    autostart: true,
+});
+
+const statusEl = document.getElementById("status");
+emulator.add_listener("emulator-ready", () => {
+    try { emulator.mouse_set_status(true); } catch(e) {}
+    statusEl.textContent = "Olal OS rodando — toque na tela";
+    setTimeout(() => statusEl.style.display = "none", 5000);
+});
+
+/* ---------- toque/clique -> mouse PS-2 absoluto ----------
+   Rastreamos o cursor em JS e mandamos deltas relativos para chegar na
+   posicao exata do toque. No v86: mouse-delta [dx,dy] move direita/cima,
+   entao para descer mandamos dy negativo. */
+let cur = { x: GW/2, y: GH/2 };
+const clamp = (v,a,b) => v<a?a:(v>b?b:v);
+
+function moveTo(gx, gy){
+    gx = clamp(Math.round(gx), 0, GW-1);
+    gy = clamp(Math.round(gy), 0, GH-1);
+    let dx = gx - cur.x, dy = gy - cur.y;
+    while(dx !== 0 || dy !== 0){
+        const sx = clamp(dx, -120, 120), sy = clamp(dy, -120, 120);
+        emulator.bus.send("mouse-delta", [sx, -sy]);
+        dx -= sx; dy -= sy;
+    }
+    cur.x = gx; cur.y = gy;
+}
+const canvas = () => document.querySelector("#screen_container canvas");
+function toGuest(p){
+    const r = canvas().getBoundingClientRect();
+    return { x: (p.clientX - r.left) / r.width * GW,
+             y: (p.clientY - r.top)  / r.height * GH };
+}
+function press(p){ moveTo(p.x, p.y); emulator.bus.send("mouse-click", [1,0,0]); }
+function release(){ emulator.bus.send("mouse-click", [0,0,0]); }
+
+const sc = document.getElementById("screen_container");
+sc.addEventListener("touchstart", e => { e.preventDefault(); press(toGuest(e.touches[0])); }, {passive:false});
+sc.addEventListener("touchmove",  e => { e.preventDefault(); const g=toGuest(e.touches[0]); moveTo(g.x,g.y); }, {passive:false});
+sc.addEventListener("touchend",   e => { e.preventDefault(); release(); }, {passive:false});
+sc.addEventListener("mousedown",  e => press(toGuest(e)));
+sc.addEventListener("mousemove",  e => { if(e.buttons & 1) { const g=toGuest(e); moveTo(g.x,g.y); } });
+sc.addEventListener("mouseup",    () => release());
+
+/* escala o canvas para preencher a tela mantendo a proporcao de celular */
+function fit(){
+    const c = canvas(); if(!c) return;
+    const s = Math.min(window.innerWidth/GW, window.innerHeight/GH);
+    c.style.width  = (GW*s)+"px";
+    c.style.height = (GH*s)+"px";
+}
+setInterval(fit, 400);
+window.addEventListener("resize", fit);
+</script>
+</body>
+</html>

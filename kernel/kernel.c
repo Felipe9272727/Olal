@@ -9,10 +9,12 @@ static u32 pci_read32(int bus,int slot,int fn,int off){
 static u32 find_lfb(void){
     for(int s=0;s<32;s++){
         if(pci_read32(0,s,0,0)==0xFFFFFFFF) continue;
-        if((pci_read32(0,s,0,0x08)>>24)==0x03)
-            return pci_read32(0,s,0,0x10) & 0xFFFFFFF0u;
+        if((pci_read32(0,s,0,0x08)>>24)==0x03){
+            u32 bar = pci_read32(0,s,0,0x10) & 0xFFFFFFF0u;
+            if(bar) return bar;
+        }
     }
-    return 0;
+    return 0xE0000000u;     /* fallback (Bochs/VBE) caso nao ache via PCI */
 }
 static void set_video(int w,int h){
     outw(0x1CE,4); outw(0x1CF,0);

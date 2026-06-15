@@ -1,89 +1,99 @@
-# Olal OS
+# Olal OS — *ia OS*
 
-Um sistema operacional minimalista escrito **do zero em Assembly x86 (32 bits)**,
-com **interface gráfica estilo Android**: tela inicial com ícones, barra de
-status, suporte a **toque/mouse** e **teclado virtual**.
+Um sistema operacional **escrito do zero**, com bootloader em Assembly x86 e
+kernel em C, rodando em **modo protegido de 32 bits**. Tem interface gráfica
+estilo Android (tela de 480×800, em pé), funciona com **toque/clique de
+verdade**, e traz uma **rede neural rodando dentro do próprio kernel** — por
+isso, uma *ia OS*.
 
-Ele inicializa em modo real (16 bits), troca para **modo protegido de 32 bits**,
-entra em **modo gráfico VGA 320x200** e roda um kernel próprio com drivers de
-vídeo, mouse, RTC e serial.
+![Olal OS](docs/home.png)
 
-## Recursos
+## O que ele tem
 
-- **Bootloader** (`boot/boot.asm`) — setor de boot de 512 bytes:
-  - configura pilha e segmentos;
-  - carrega o kernel do disco (BIOS `int 0x13`, com conversão LBA→CHS);
-  - coloca a placa de vídeo em **modo gráfico 13h** (320x200, 256 cores);
-  - habilita a linha A20, monta a **GDT** e entra em modo protegido;
-  - salta para o kernel.
-- **Kernel** (`kernel/kernel.asm`) — 32 bits, modo protegido:
-  - **double buffering** (desenha em `0x30000` e copia para a tela);
-  - **fonte 8x8 própria** (`kernel/font8x8.inc`) para desenhar texto;
-  - **paleta personalizada** (cores estilo material design);
-  - driver de **mouse PS/2** — no celular o **toque vira clique**;
-  - **teclado virtual** QWERTY na tela;
-  - leitura do **RTC** (relógio de tempo real, via CMOS);
-  - driver **serial COM1** (usado para verificação automática).
-- **Tela inicial** com barra de status (relógio) e grade de apps:
-  - **Terminal/Notas** — área de texto + teclado virtual;
-  - **Calculadora** — teclado numérico com `+ - * = C`;
-  - **Relógio** — mostra a hora do RTC;
-  - **Sobre** — informações do sistema;
-  - **Reboot** — reinicia a máquina (via controlador 8042).
+- **Bootloader** (`boot/boot.asm`): carrega o kernel do disco via leitura LBA
+  estendida da BIOS, habilita A20, monta a GDT e entra em modo protegido.
+- **Kernel em C** (`kernel/`):
+  - framebuffer linear **480×800 32bpp** (proporção de celular) via Bochs-VBE,
+    localizado por varredura **PCI**, com **double buffering**;
+  - biblioteca gráfica própria: retângulos arredondados, gradientes, círculos,
+    alpha-blend e **fonte 8×16** própria;
+  - driver de **mouse/touch PS-2** e leitura do **relógio (RTC)**;
+  - **FPU (x87)** inicializada para a IA usar ponto flutuante.
+- **Interface estilo Android**: papel de parede, barra de status com relógio,
+  grade de apps coloridos, navegação por toque e **teclado virtual QWERTY**.
+- **8 aplicativos**: Olal AI, Terminal (com comandos), Calculadora, Notas,
+  Relógio, Config, Arquivos e Paint (desenho com o dedo).
+- **Olal AI** — uma **rede neural char-level (MLP, ~43 mil parâmetros)**
+  treinada em português que roda **inteira dentro do kernel**: forward pass,
+  softmax e amostragem, com `exp`/`tanh` próprios em x87. É pequena (recombina
+  o corpus de treino), mas é uma rede neural **de verdade**, em bare-metal.
 
-## Arquitetura
+## Como está montado
 
 ```
-BIOS -> boot.asm (16-bit, 0x7C00) -> modo 13h -> modo protegido -> kernel.asm (32-bit, 0x1000)
+BIOS → boot.asm (16 bits) → modo protegido 32 bits → kernel C (480×800)
+                                                         ├── gfx / fonte
+                                                         ├── ps2 (touch) / rtc
+                                                         ├── ui (teclado, botoes)
+                                                         ├── apps (8 apps)
+                                                         └── ai  (rede neural)
 ```
 
-A imagem final (`build/olal.img`) é um disquete de 1.44MB:
-setor 0 = bootloader, setores seguintes = kernel.
+## Compilar e rodar (no PC)
 
-## Pré-requisitos
-
-- `nasm`
-- `qemu-system-i386`
-- `make`
-- `python3` + `pillow` (apenas para regenerar a fonte, opcional)
-
-```sh
-sudo apt-get install nasm qemu-system-x86 make
-```
-
-## Compilar e rodar
+Pré-requisitos: `nasm`, `gcc` (multilib 32 bits), `qemu-system-i386`, `make`.
+Para retreinar a IA também: `python3` + `numpy` + `pillow`.
 
 ```sh
 make            # gera build/olal.img
-make run        # roda no QEMU com janela gráfica (use o mouse!)
-make run-serial # roda sem gráfico, espelhando a serial no terminal
-make test       # boota e verifica que o kernel entrou em modo protegido
-make clean      # limpa os artefatos
+make run        # roda no QEMU (use o mouse: clique e arraste)
+make clean
 ```
 
-## Rodar no celular (Android)
+## Rodar no celular (Android) com toque de verdade
 
-A forma mais fácil de testar no Android é pelo emulador **v86** no navegador:
+O sistema roda no navegador via [v86](https://github.com/copy/v86). A pasta
+`web/` traz um wrapper que converte **toque em clique absoluto** (toca = clica
+exatamente onde tocou).
 
-1. Pegue o arquivo `build/olal.img`.
-2. Abra `https://copy.sh/v86` no Chrome.
-3. Em **Custom boot**, escolha **Floppy disk image** e envie o `olal.img`.
-4. Toque em **Start** — a tela inicial aparece e o **toque** funciona como clique.
-
-Também dá para rodar no **Termux** (`pkg install nasm qemu-system-x86-64 make`).
-
-## Regenerar a fonte (opcional)
-
-A fonte 8x8 é gerada de uma TTF monoespaçada:
+**Hospedando (recomendado — toque perfeito):**
 
 ```sh
-python3 tools/genfont.py   # regrava kernel/font8x8.inc
+make serve      # sobe http://localhost:8000  (ou hospede a pasta web/)
 ```
 
-## Como funciona o boot
+Ou ative o **GitHub Pages** apontando para a pasta `web/` do repositório e
+abra a URL no celular. O arquivo `web/olal.img` já vai junto.
 
-1. A BIOS carrega o setor 0 (512 bytes) em `0x7C00` e o executa em modo real.
-2. O bootloader lê os setores do kernel para `0x1000` e entra no modo 13h.
-3. Habilita A20, carrega a GDT e liga o bit `PE` de `CR0`.
-4. Um *far jump* recarrega `CS` e entra em modo protegido de 32 bits.
-5. O kernel assume, inicializa os drivers e desenha a tela inicial.
+> Observação honesta: o kernel foi testado no **QEMU** (tudo funcionando:
+> navegação, apps, calculadora, teclado e a IA gerando texto). O caminho do
+> **navegador/v86** foi montado com a API correta, mas não pôde ser testado
+> neste ambiente — se a tela ficar preta ou o toque sair torto, é provável
+> que seja o endereço do framebuffer no v86 (ajuste fácil).
+
+## Treinar a própria IA
+
+Edite o corpus em `tools/corpus.txt` e rode:
+
+```sh
+python3 tools/train.py     # treina e regrava kernel/model.h
+make
+```
+
+## Estrutura
+
+```
+boot/boot.asm      bootloader (16 -> 32 bits)
+kernel/entry.asm   stub de entrada (inicia pilha + FPU, chama kmain)
+kernel/kernel.c    main, video (PCI+VBE), home, navegacao
+kernel/gfx.c       biblioteca grafica + fonte
+kernel/ui.c        botoes, barra de topo, teclado virtual
+kernel/apps.c      os 8 aplicativos
+kernel/ai.c        inferencia da rede neural
+kernel/ps2.c       mouse/touch     kernel/rtc.c  relogio
+kernel/util.c      mem*/str*/itoa
+linker.ld          layout do kernel em 0x10000
+tools/train.py     treino da IA (numpy) -> kernel/model.h
+tools/genfont.py   gera kernel/font8x16.h
+web/index.html     wrapper v86 com toque absoluto
+```

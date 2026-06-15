@@ -9,7 +9,7 @@ CSRC := $(wildcard kernel/*.c)
 COBJ := $(patsubst kernel/%.c,$(BUILD)/%.o,$(CSRC))
 OBJS := $(BUILD)/entry.o $(COBJ)
 
-.PHONY: all run clean
+.PHONY: all run web serve clean
 all: $(BUILD)/olal.img
 $(BUILD):
 	mkdir -p $(BUILD)
@@ -25,8 +25,12 @@ $(BUILD)/kernel.bin: $(BUILD)/kernel.elf
 	objcopy -O binary $< $@
 $(BUILD)/olal.img: $(BUILD)/boot.bin $(BUILD)/kernel.bin
 	cat $(BUILD)/boot.bin $(BUILD)/kernel.bin > $@
-	truncate -s 4194304 $@
+	truncate -s 368640 $@
 run: $(BUILD)/olal.img
 	$(QEMU) -vga std -drive format=raw,file=$(BUILD)/olal.img,if=ide
+web: $(BUILD)/olal.img
+	cp $(BUILD)/olal.img web/olal.img
+serve: web
+	cd web && python3 -m http.server 8000
 clean:
 	rm -rf $(BUILD)
