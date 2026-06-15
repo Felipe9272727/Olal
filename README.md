@@ -10,8 +10,8 @@ isso, uma *ia OS*.
 
 ## O que ele tem
 
-- **Bootloader** (`boot/boot.asm`): carrega o kernel do disco via leitura LBA
-  estendida da BIOS, habilita A20, monta a GDT e entra em modo protegido.
+- **Bootloader** (`boot/boot.asm`): carrega o kernel do disco (disquete, via
+  leitura CHS da BIOS), habilita A20, monta a GDT e entra em modo protegido.
 - **Kernel em C** (`kernel/`):
   - framebuffer linear **480×800 32bpp** (proporção de celular) via Bochs-VBE,
     localizado por varredura **PCI**, com **double buffering**;
@@ -52,24 +52,23 @@ make clean
 
 ## Rodar no celular (Android) com toque de verdade
 
-O sistema roda no navegador via [v86](https://github.com/copy/v86). A pasta
-`web/` traz um wrapper que converte **toque em clique absoluto** (toca = clica
-exatamente onde tocou).
+O sistema roda no navegador via [v86](https://github.com/copy/v86). O
+`index.html` (na raiz) converte **toque em clique absoluto** — toca = clica
+exatamente onde tocou.
 
-**Hospedando (recomendado — toque perfeito):**
+**Localmente:**
 
 ```sh
-make serve      # sobe http://localhost:8000  (ou hospede a pasta web/)
+make serve      # sobe http://localhost:8000
 ```
 
-Ou ative o **GitHub Pages** apontando para a pasta `web/` do repositório e
-abra a URL no celular. O arquivo `web/olal.img` já vai junto.
+**No celular (GitHub Pages):** ative **Settings → Pages → Deploy from a branch
+→ `main` / `/ (root)`**. Abra a URL gerada no Chrome do Android — o
+`index.html` carrega o v86 e o `olal.img`, e você usa por toque.
 
-> Observação honesta: o kernel foi testado no **QEMU** (tudo funcionando:
-> navegação, apps, calculadora, teclado e a IA gerando texto). O caminho do
-> **navegador/v86** foi montado com a API correta, mas não pôde ser testado
-> neste ambiente — se a tela ficar preta ou o toque sair torto, é provável
-> que seja o endereço do framebuffer no v86 (ajuste fácil).
+> Testado de verdade: o kernel boota e roda tanto no **QEMU** quanto no
+> **v86** (emulador do navegador, headless), com a tela 480×800, a navegação
+> e o **toque** funcionando — o app Calculadora abriu por toque no v86.
 
 ## Treinar a própria IA
 
@@ -95,5 +94,5 @@ kernel/util.c      mem*/str*/itoa
 linker.ld          layout do kernel em 0x10000
 tools/train.py     treino da IA (numpy) -> kernel/model.h
 tools/genfont.py   gera kernel/font8x16.h
-web/index.html     wrapper v86 com toque absoluto
+index.html         wrapper v86 com toque absoluto (GitHub Pages)
 ```

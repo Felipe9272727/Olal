@@ -1,14 +1,17 @@
 ; ============================================================================
 ;  Olal OS - Bootloader (16 bits)
-;  Carrega o kernel (C) do disco via leitura LBA estendida (int 13h / AH=42h),
+;  Carrega o kernel (C) do disco via leitura CHS multi-setor (int 13h/AH=02),
 ;  habilita A20, entra em modo protegido de 32 bits e salta para o kernel.
+;  Bootavel como disquete (compativel com QEMU -fda e com o v86).
 ; ============================================================================
 [org 0x7C00]
 [bits 16]
 
 KERNEL_PHYS   equ 0x10000        ; endereco fisico do kernel
 KERNEL_SEG    equ 0x1000         ; = KERNEL_PHYS / 16
-LOAD_SECTORS  equ 700        ; setores a carregar (350 KB, cobre o kernel)
+LOAD_SECTORS  equ 420            ; setores a carregar (cobre o kernel ~196 KB)
+SPT           equ 18             ; setores por trilha (disquete 1.44MB)
+HEADS         equ 2
 
 start:
     cli
@@ -47,49 +50,58 @@ print:                            ; SI = string terminada em 0
     popa
     ret
 
-; Carrega LOAD_SECTORS setores a partir do LBA 1 para KERNEL_PHYS, em blocos
-; de 64 setores, usando a leitura estendida da BIOS.
+; Carrega LOAD_SECTORS setores (a partir do LBA 1) para KERNEL_PHYS, lendo
+; uma trilha de cada vez (CHS), de forma contigua na memoria.
 load_kernel:
     pusha
-    mov ebx, 1                    ; LBA atual
-    mov word [cur_seg], KERNEL_SEG
     mov bp, LOAD_SECTORS          ; setores restantes
-.loop:
+    mov di, 1                     ; LBA atual
+    mov word [cur_seg], KERNEL_SEG
+.next:
     cmp bp, 0
     je .done
-    mov cx, 64
-    cmp bp, cx
-    jae .have
-    mov cx, bp
-.have:
-    mov word [dap_count], cx
-    mov word [dap_off], 0
-    mov ax, [cur_seg]
-    mov [dap_seg], ax
-    mov [dap_lba], ebx
-    mov dword [dap_lba + 4], 0
-
-    mov si, dap
-    mov ah, 0x42
+    ; --- LBA (DI) -> CHS ---
+    mov ax, di
+    xor dx, dx
+    mov cx, SPT
+    div cx                        ; AX = trilha, DX = setor (0..17)
+    inc dx
+    mov [c_sec], dl               ; setor (1..18)
+    xor dx, dx
+    mov cx, HEADS
+    div cx                        ; AX = cilindro, DX = cabeca
+    mov [c_cyl], al
+    mov [c_head], dl
+    ; le 1 setor (multi-setor em disquete esbarra no limite de DMA de 64 KB)
+    mov word [retry], 4
+.try:
+    mov ah, 0x02
+    mov al, 1
+    mov ch, [c_cyl]
+    mov cl, [c_sec]
+    mov dh, [c_head]
+    mov dl, [BOOT_DRIVE]
+    mov bx, [cur_seg]
+    mov es, bx
+    xor bx, bx
+    int 0x13
+    jnc .ok
+    xor ah, ah                    ; reset do controlador e tenta de novo
     mov dl, [BOOT_DRIVE]
     int 0x13
-    jc .error
-
-    ; avanca LBA, segmento e contador
-    movzx eax, cx
-    add ebx, eax                 ; LBA += cx
-    sub bp, cx                   ; restantes -= cx
-    mov dx, 32
-    mul dx                       ; ax = cx * 32 (paragrafos por setor)
-    add [cur_seg], ax
-    jmp .loop
-.done:
-    popa
-    ret
-.error:
+    dec word [retry]
+    jnz .try
     mov si, msg_err
     call print
     jmp $
+.ok:
+    inc di                        ; proximo LBA
+    dec bp                        ; um setor a menos
+    add word [cur_seg], 32        ; avanca 512 bytes (32 paragrafos)
+    jmp .next
+.done:
+    popa
+    ret
 
 enable_a20:
     in  al, 0x92
@@ -97,8 +109,6 @@ enable_a20:
     out 0x92, al
     ret
 
-; ---------------------------------------------------------------------------
-;  GDT (flat: base 0, limite 4 GB)
 ; ---------------------------------------------------------------------------
 gdt_start:
     dd 0, 0
@@ -131,14 +141,11 @@ pm_entry:
 ; ---------------------------------------------------------------------------
 BOOT_DRIVE  db 0
 cur_seg     dw 0
-dap:
-    db 0x10                       ; tamanho do pacote
-    db 0
-dap_count:  dw 0
-dap_off:    dw 0
-dap_seg:    dw 0
-dap_lba:    dd 0
-            dd 0
+c_sec       db 0
+c_head      db 0
+c_cyl       db 0
+c_cnt       dw 0
+retry       dw 0
 
 msg_boot    db "Olal: carregando kernel...", 13, 10, 0
 msg_err     db "Olal: ERRO de disco!", 13, 10, 0

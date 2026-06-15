@@ -25,12 +25,12 @@ $(BUILD)/kernel.bin: $(BUILD)/kernel.elf
 	objcopy -O binary $< $@
 $(BUILD)/olal.img: $(BUILD)/boot.bin $(BUILD)/kernel.bin
 	cat $(BUILD)/boot.bin $(BUILD)/kernel.bin > $@
-	truncate -s 368640 $@
+	truncate -s 1474560 $@
 run: $(BUILD)/olal.img
-	$(QEMU) -vga std -drive format=raw,file=$(BUILD)/olal.img,if=ide
+	$(QEMU) -vga std -fda $(BUILD)/olal.img
 web: $(BUILD)/olal.img
-	cp $(BUILD)/olal.img web/olal.img
+	cp $(BUILD)/olal.img olal.img
 serve: web
-	cd web && python3 -m http.server 8000
+	python3 -m http.server 8000
 clean:
 	rm -rf $(BUILD)

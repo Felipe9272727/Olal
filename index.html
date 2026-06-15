@@ -29,7 +29,7 @@ const emulator = new V86CLASS({
     wasm_path: CDN + "/build/v86.wasm",
     bios:     { url: CDN + "/bios/seabios.bin" },
     vga_bios: { url: CDN + "/bios/vgabios.bin" },
-    hda:      { url: "olal.img" },
+    fda:      { url: "olal.img" },
     memory_size: 64 * 1024 * 1024,
     vga_memory_size: 16 * 1024 * 1024,
     screen_container: document.getElementById("screen_container"),
