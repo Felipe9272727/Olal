@@ -69,10 +69,25 @@ static void draw_home(void){
         gfx_round(x, y, ICON, ICON, 22, apps[i].color);
         gfx_text_center(x+ICON/2, y+ICON/2-16, apps[i].icon, 0xFFFFFF, 3);
         gfx_text_center(x+ICON/2, y+ICON+8, apps[i].name, 0xCBD5E1, 1);
+        if(ui_hit(x, y, ICON, ICON)) g_screen = i;
     }
 
     /* barra de navegacao inferior */
     gfx_round(SCRW/2-60, SCRH-26, 120, 8, 4, 0x334155);
+}
+
+static void draw_app(void){
+    switch(g_screen){
+        case 0: app_ai();       break;
+        case 1: app_terminal(); break;
+        case 2: app_calc();     break;
+        case 3: app_notes();    break;
+        case 4: app_clock();    break;
+        case 5: app_config();   break;
+        case 6: app_files();    break;
+        case 7: app_paint();    break;
+        default: g_screen = -1; break;
+    }
 }
 
 static void draw_cursor(void){
@@ -89,7 +104,8 @@ void kmain(void){
 
     for(;;){
         ptr_poll();
-        draw_home();
+        if(g_screen < 0) draw_home();
+        else draw_app();
         draw_cursor();
         gfx_present();
     }

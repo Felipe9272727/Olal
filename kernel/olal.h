@@ -29,6 +29,7 @@ void   strcpy_s(char *d, const char *s, int max);
 #define SCRW 480
 #define SCRH 800
 void gfx_init(u32 lfb);
+u32  gfx_lighten(u32 c, int amt);
 void gfx_present(void);
 void gfx_clear(u32 c);
 void gfx_pixel(int x, int y, u32 c);
@@ -51,5 +52,30 @@ extern Pointer g_ptr;
 
 /* ----- relogio ----- */
 void rtc_time(char *out);   /* "HH:MM" */
+void rtc_full(char *out);   /* "HH:MM:SS" */
+void rtc_date(char *out);   /* "DD/MM/AAAA" */
+
+/* ----- UI / navegacao ----- */
+extern int g_screen;        /* -1 = home, senao id do app */
+int  ui_inside(int x, int y, int w, int h);
+int  ui_hit(int x, int y, int w, int h);
+int  ui_button(int x, int y, int w, int h, const char *label, u32 col, u32 tcol, int ts);
+void ui_topbar(const char *title);
+char osk_render(int y0);
+
+/* ----- apps ----- */
+void app_ai(void);
+void app_terminal(void);
+void app_calc(void);
+void app_notes(void);
+void app_clock(void);
+void app_config(void);
+void app_files(void);
+void app_paint(void);
+
+/* ----- IA (rede neural) ----- */
+void ai_reset(void);
+int  ai_step(char *outbuf, int maxlen);   /* gera ate maxlen chars a partir do contexto */
+void ai_feed(const char *prompt);
 
 #endif
