@@ -108,6 +108,7 @@ void kmain(void){
     set_video(SCRW, SCRH);
     gfx_init(lfb);
     ptr_init();
+    heap_init();            /* memoria dinamica (malloc/free) */
     ints_init();            /* interrupcoes + timer + multitarefa */
 
     for(;;){
