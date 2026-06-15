@@ -78,6 +78,13 @@ void app_sistema(void);
 /* ----- OLA-32: nossa arquitetura de CPU ----- */
 int ola32_demo(char *out, int max);
 
+/* ----- memoria dinamica (heap) ----- */
+void  heap_init(void);
+void *kmalloc(u32 n);
+void  kfree(void *p);
+u32   heap_total(void);
+extern volatile u32 g_heap_used, g_heap_allocs;
+
 /* ----- interrupcoes + multitarefa ----- */
 void ints_init(void);
 extern volatile u32 g_ticks, g_switches, g_work[3];

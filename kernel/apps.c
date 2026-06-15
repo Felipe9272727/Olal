@@ -189,13 +189,25 @@ void app_sistema(void){
         itoa((int)g_work[i], b); gfx_text(170, y, b, 0x6EE7B7, 2);
     }
 
-    if(ui_button(16, 380, (SCRW-40)/2, 70, "criar tarefa", 0x2563EB, 0xFFFFFF, 2)) task_spawn();
-    if(ui_button(SCRW/2+4, 380, (SCRW-40)/2, 70, "parar", 0xDC2626, 0xFFFFFF, 2)) task_kill_demos();
+    if(ui_button(16, 380, (SCRW-40)/2, 64, "criar tarefa", 0x2563EB, 0xFFFFFF, 2)) task_spawn();
+    if(ui_button(SCRW/2+4, 380, (SCRW-40)/2, 64, "parar", 0xDC2626, 0xFFFFFF, 2)) task_kill_demos();
 
-    gfx_text(20, 480, "multitarefa preemptiva real:", 0x94A3B8, 1);
-    gfx_text(20, 500, "o timer troca de tarefa 100x/s.", 0x94A3B8, 1);
-    gfx_text(20, 520, "crie tarefas e veja a UI dividir a", 0x94A3B8, 1);
-    gfx_text(20, 540, "CPU com elas (contadores subindo).", 0x94A3B8, 1);
+    /* memoria dinamica (heap) */
+    static void *demo[8]; static int dn = 0;
+    gfx_round(16, 458, SCRW-32, 96, 12, 0x0E1A18);
+    gfx_text(30, 470, "Heap (KB):", 0x94A3B8, 1);
+    itoa((int)(g_heap_used/1024), b); gfx_text(140, 466, b, 0x6EE7B7, 2);
+    gfx_text(140+gfx_textw(b,2)+8, 472, "/", 0x94A3B8, 1);
+    itoa((int)(heap_total()/1024), b); gfx_text(140+gfx_textw(b,2)+24, 466, b, 0x94A3B8, 2);
+    gfx_text(30, 502, "blocos alocados:", 0x94A3B8, 1);
+    itoa((int)g_heap_allocs, b); gfx_text(210, 498, b, 0xFBBF24, 2);
+
+    if(ui_button(30, 528, 200, 20, "kmalloc 256KB", 0x7C3AED, 0xFFFFFF, 1)){
+        if(dn < 8){ void *p = kmalloc(256*1024); if(p) demo[dn++] = p; }
+    }
+    if(ui_button(250, 528, 200, 20, "kfree tudo", 0x374151, 0xFFFFFF, 1)){
+        while(dn > 0) kfree(demo[--dn]);
+    }
 }
 
 /* ================= OLA-32 (nossa CPU) ================= */
