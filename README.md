@@ -28,6 +28,22 @@ isso, uma *ia OS*.
   softmax e amostragem, com `exp`/`tanh` próprios em x87. É pequena (recombina
   o corpus de treino), mas é uma rede neural **de verdade**, em bare-metal.
 
+## OLA-32 — nossa própria arquitetura de CPU
+
+O Olal tem uma **arquitetura de CPU criada do zero**, a **OLA-32** (RISC, 32
+bits, 16 registradores) — a "nossa ARM". Vem com:
+- **ISA** documentada (`arch/SPEC.md`)
+- **montador** (`arch/oasm.py`): assembly OLA-32 → código de máquina
+- **emulador** (`arch/oemu.c`): roda no PC **e embutido no kernel** do Olal
+
+O app **OLA-32** dentro do Olal roda um programa nessa CPU (Fibonacci) e mostra
+a saída — ou seja, **nossa CPU rodando dentro do nosso OS**.
+
+```sh
+python3 arch/oasm.py arch/demo.s -o demo.bin   # monta
+gcc arch/oemu.c -o oemu && ./oemu demo.bin     # roda -> 0 1 1 2 3 5 8 13 ...
+```
+
 ## Como está montado
 
 ```
