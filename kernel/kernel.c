@@ -36,6 +36,7 @@ static App apps[] = {
     {"Arquivos",0xEAB308, "F"},
     {"Paint",   0xEF4444, "P"},
     {"OLA-32",  0x8B5CF6, "C"},
+    {"Sistema", 0x10B981, "S"},
 };
 #define NAPPS (int)(sizeof(apps)/sizeof(apps[0]))
 
@@ -90,6 +91,7 @@ static void draw_app(void){
         case 6: app_files();    break;
         case 7: app_paint();    break;
         case 8: app_ola32();    break;
+        case 9: app_sistema();  break;
         default: g_screen = -1; break;
     }
 }
@@ -106,6 +108,7 @@ void kmain(void){
     set_video(SCRW, SCRH);
     gfx_init(lfb);
     ptr_init();
+    ints_init();            /* interrupcoes + timer + multitarefa */
 
     for(;;){
         ptr_poll();

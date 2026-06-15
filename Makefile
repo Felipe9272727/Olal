@@ -7,7 +7,7 @@ CFLAGS := -m32 -ffreestanding -nostdlib -fno-pic -fno-pie -fno-stack-protector \
           -fno-builtin -mno-sse -mno-mmx -mfpmath=387 -Wall -Wextra -O2 -c
 CSRC := $(wildcard kernel/*.c)
 COBJ := $(patsubst kernel/%.c,$(BUILD)/%.o,$(CSRC))
-OBJS := $(BUILD)/entry.o $(COBJ)
+OBJS := $(BUILD)/entry.o $(BUILD)/isr.o $(COBJ)
 
 .PHONY: all run web serve clean
 all: $(BUILD)/olal.img
@@ -16,6 +16,8 @@ $(BUILD):
 $(BUILD)/boot.bin: boot/boot.asm | $(BUILD)
 	$(ASM) -f bin $< -o $@
 $(BUILD)/entry.o: kernel/entry.asm | $(BUILD)
+	$(ASM) -f elf32 $< -o $@
+$(BUILD)/isr.o: kernel/isr.asm | $(BUILD)
 	$(ASM) -f elf32 $< -o $@
 $(BUILD)/%.o: kernel/%.c | $(BUILD)
 	$(CC) $(CFLAGS) $< -o $@
