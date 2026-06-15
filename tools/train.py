@@ -3,10 +3,10 @@
    os pesos para kernel/model.h, para a IA rodar dentro do kernel do Olal OS."""
 import numpy as np, unicodedata, sys
 
-CTX = 12          # tamanho da janela de contexto (caracteres)
-EMB = 16          # dimensao do embedding
-HID = 192         # neuronios da camada escondida
-EPOCHS = 4000
+CTX = 16          # janela de contexto
+EMB = 18          # embedding
+HID = 256         # camada escondida
+EPOCHS = 6000
 LR = 0.02
 np.random.seed(1)
 
