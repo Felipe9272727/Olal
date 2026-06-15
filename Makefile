@@ -42,7 +42,7 @@ test: $(OS_IMAGE)
 	@echo ">> Testando boot do Olal OS..."
 	@out=$$(timeout 5 $(QEMU) -fda $(OS_IMAGE) -display none -serial stdio < /dev/null 2>/dev/null); \
 	echo "$$out"; \
-	echo "$$out" | grep -q "kernel online" \
+	echo "$$out" | grep -q "kernel grafico online" \
 	  && echo ">> OK: kernel entrou em modo protegido 32-bit." \
 	  || { echo ">> FALHA: marca da serial nao encontrada."; exit 1; }
 

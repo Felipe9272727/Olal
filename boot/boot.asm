@@ -13,7 +13,7 @@
 [bits 16]                    ; comecamos em modo real (16 bits)
 
 KERNEL_OFFSET  equ 0x1000    ; onde o kernel sera carregado na memoria
-KERNEL_SECTORS equ 32        ; quantos setores (512B) do kernel carregar
+KERNEL_SECTORS equ 24        ; quantos setores (512B) do kernel carregar
 
 ; ----------------------------------------------------------------------------
 start:
@@ -34,6 +34,9 @@ start:
 
     mov si, msg_loaded
     call print_string
+
+    mov ax, 0x0013           ; modo de video VGA 320x200, 256 cores
+    int 0x10
 
     call enable_a20          ; libera acesso acima de 1MB
 
@@ -176,6 +179,7 @@ BOOT_DRIVE   db 0
 abs_sector   db 0
 abs_head     db 0
 abs_cyl      db 0
+chunk        dw 0
 
 msg_boot     db "Olal: iniciando bootloader...", 13, 10, 0
 msg_loaded   db "Olal: kernel carregado, entrando em modo protegido", 13, 10, 0
