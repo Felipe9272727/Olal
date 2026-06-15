@@ -93,9 +93,10 @@ static void draw_app(void){
 }
 
 static void draw_cursor(void){
-    gfx_circle(g_ptr.x, g_ptr.y, 9, 0x33FFFFFF & 0xFFFFFF);
-    gfx_circle(g_ptr.x, g_ptr.y, 6, 0xFFFFFF);
-    gfx_circle(g_ptr.x, g_ptr.y, 4, g_ptr.down ? 0x2BD17A : 0x111827);
+    /* touch real: so mostra um indicador enquanto o dedo esta encostado */
+    if(!g_ptr.down) return;
+    gfx_circle(g_ptr.x, g_ptr.y, 14, 0x2BD17A);
+    gfx_circle(g_ptr.x, g_ptr.y, 10, 0x0A0E16);
 }
 
 void kmain(void){

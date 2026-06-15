@@ -59,20 +59,25 @@ try {
     setStatus("erro ao iniciar: " + err.message, false);
 }
 
-/* ---------- toque/clique -> mouse PS-2 absoluto ---------- */
-let cur = { x: GW/2, y: GH/2 };
+/* ---------- TOUCH REAL: escreve a coordenada absoluta direto na RAM do
+   kernel (mailbox em 0x5000). Tocou num ponto = aquele ponto, na hora. ---------- */
+const MB = 0x5000, MAGIC = 0x4F4C4131;
 const clamp = (v,a,b) => v<a?a:(v>b?b:v);
-function moveTo(gx, gy){
+function wU32(addr, v){ emulator.write_memory(new Uint8Array([v&255,(v>>>8)&255,(v>>>16)&255,(v>>>24)&255]), addr); }
+let seq = 0, clicks = 0;
+function setTouch(gx, gy, down){
     if(!emulator) return;
     gx = clamp(Math.round(gx), 0, GW-1);
     gy = clamp(Math.round(gy), 0, GH-1);
-    let dx = gx - cur.x, dy = gy - cur.y;
-    while(dx !== 0 || dy !== 0){
-        const sx = clamp(dx, -100, 100), sy = clamp(dy, -100, 100);
-        emulator.bus.send("mouse-delta", [sx, -sy]);   // y invertido no v86
-        dx -= sx; dy -= sy;
-    }
-    cur.x = gx; cur.y = gy;
+    wU32(MB, MAGIC);                       /* (re)ativa o modo touch */
+    wU32(MB+8, gx); wU32(MB+12, gy); wU32(MB+16, down ? 1 : 0); wU32(MB+4, ++seq);
+}
+function endTouch(gx, gy){
+    if(!emulator) return;
+    gx = clamp(Math.round(gx), 0, GW-1);
+    gy = clamp(Math.round(gy), 0, GH-1);
+    wU32(MB, MAGIC);
+    wU32(MB+8, gx); wU32(MB+12, gy); wU32(MB+16, 0); wU32(MB+20, ++clicks); wU32(MB+4, ++seq);
 }
 const canvas = () => document.querySelector("#screen_container canvas");
 function toGuest(p){
@@ -80,9 +85,6 @@ function toGuest(p){
     return { x: (p.clientX - r.left) / r.width * GW,
              y: (p.clientY - r.top)  / r.height * GH };
 }
-function press(p){ moveTo(p.x, p.y); emulator.bus.send("mouse-click", [1,0,0]); }
-function release(){ if(emulator) emulator.bus.send("mouse-click", [0,0,0]); }
-
 function ripple(cx, cy){
     const r = document.createElement("div");
     r.className = "ripple"; r.style.left = cx+"px"; r.style.top = cy+"px";
@@ -90,14 +92,17 @@ function ripple(cx, cy){
     setTimeout(() => r.remove(), 420);
 }
 
+let lastG = { x: GW/2, y: GH/2 };
 const sc = document.getElementById("screen_container");
 sc.addEventListener("touchstart", e => { e.preventDefault();
-    const t = e.touches[0]; ripple(t.clientX, t.clientY); press(toGuest(t)); }, {passive:false});
-sc.addEventListener("touchmove",  e => { e.preventDefault(); const g=toGuest(e.touches[0]); moveTo(g.x,g.y); }, {passive:false});
-sc.addEventListener("touchend",   e => { e.preventDefault(); release(); }, {passive:false});
-sc.addEventListener("mousedown",  e => press(toGuest(e)));
-sc.addEventListener("mousemove",  e => { if(e.buttons & 1){ const g=toGuest(e); moveTo(g.x,g.y); } });
-sc.addEventListener("mouseup",    () => release());
+    const t = e.touches[0]; ripple(t.clientX, t.clientY);
+    lastG = toGuest(t); setTouch(lastG.x, lastG.y, 1); }, {passive:false});
+sc.addEventListener("touchmove",  e => { e.preventDefault();
+    lastG = toGuest(e.touches[0]); setTouch(lastG.x, lastG.y, 1); }, {passive:false});
+sc.addEventListener("touchend",   e => { e.preventDefault(); endTouch(lastG.x, lastG.y); }, {passive:false});
+sc.addEventListener("mousedown",  e => { lastG = toGuest(e); setTouch(lastG.x, lastG.y, 1); });
+sc.addEventListener("mousemove",  e => { if(e.buttons & 1){ lastG = toGuest(e); setTouch(lastG.x, lastG.y, 1); } });
+sc.addEventListener("mouseup",    e => { const g = toGuest(e); endTouch(g.x, g.y); });
 
 function fit(){
     const c = canvas(); if(!c) return;
