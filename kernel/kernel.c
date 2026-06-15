@@ -35,6 +35,7 @@ static App apps[] = {
     {"Config",  0x94A3B8, "%"},
     {"Arquivos",0xEAB308, "F"},
     {"Paint",   0xEF4444, "P"},
+    {"OLA-32",  0x8B5CF6, "C"},
 };
 #define NAPPS (int)(sizeof(apps)/sizeof(apps[0]))
 
@@ -88,6 +89,7 @@ static void draw_app(void){
         case 5: app_config();   break;
         case 6: app_files();    break;
         case 7: app_paint();    break;
+        case 8: app_ola32();    break;
         default: g_screen = -1; break;
     }
 }

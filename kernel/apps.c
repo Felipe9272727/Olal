@@ -166,6 +166,32 @@ void app_paint(void){
     if(ui_button(SCRW-90, SCRH-58, 78, 48, "limpar", 0x374151, 0xFFFFFF, 1)) npts = 0;
 }
 
+/* ================= OLA-32 (nossa CPU) ================= */
+void app_ola32(void){
+    static char out[512]; static int ran = 0;
+    if(!ran){ ola32_demo(out, sizeof(out)); ran = 1; }
+    gfx_vgrad(0,0,SCRW,SCRH, 0x1A1030, 0x05070C);
+    ui_topbar("OLA-32 CPU");
+    gfx_text(20, 70, "Arquitetura criada do zero", 0xC4B5FD, 1);
+    gfx_text(20, 90, "para o Olal: 16 regs, RISC 32-bit", 0x94A3B8, 1);
+
+    gfx_round(16, 120, SCRW-32, 90, 12, 0x140C24);
+    gfx_text(30, 134, "programa: fibonacci.s", 0xA78BFA, 1);
+    gfx_text(30, 158, "rodando na nossa CPU:", 0x94A3B8, 1);
+    gfx_text(30, 182, out, 0x6EE7B7, 2);
+
+    gfx_round(16, 230, SCRW-32, 250, 12, 0x140C24);
+    gfx_text(30, 244, "ola-32 assembly:", 0xA78BFA, 1);
+    const char *code =
+        "  li   r1, 0\n  li   r2, 1\n  li   r3, 12\nloop:\n"
+        "  sys  r1, 2\n  add  r6, r1, r2\n  add  r1, r0, r2\n"
+        "  add  r2, r0, r6\n  addi r4, r4, 1\n  bne  r4, r3, loop\n  hlt";
+    gfx_text(30, 268, code, 0xCBD5E1, 1);
+
+    gfx_text(20, 500, "a CPU, o montador e o emulador", 0x94A3B8, 1);
+    gfx_text(20, 520, "sao 100% nossos (arch/).", 0x94A3B8, 1);
+}
+
 /* ================= Olal AI ================= */
 static char chat[2048] = "Oi! Eu sou a Olal AI, uma rede neural pequena\nrodando dentro do kernel. Fale comigo:\n\n";
 static int clen = 0;

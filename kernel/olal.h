@@ -72,6 +72,10 @@ void app_clock(void);
 void app_config(void);
 void app_files(void);
 void app_paint(void);
+void app_ola32(void);
+
+/* ----- OLA-32: nossa arquitetura de CPU ----- */
+int ola32_demo(char *out, int max);
 
 /* ----- IA (rede neural) ----- */
 void ai_reset(void);
