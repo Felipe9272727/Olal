@@ -166,6 +166,38 @@ void app_paint(void){
     if(ui_button(SCRW-90, SCRH-58, 78, 48, "limpar", 0x374151, 0xFFFFFF, 1)) npts = 0;
 }
 
+/* ================= Sistema (multitarefa) ================= */
+void app_sistema(void){
+    gfx_vgrad(0,0,SCRW,SCRH, 0x0B1F1A, 0x05070C);
+    ui_topbar("Sistema");
+    char b[20];
+
+    gfx_round(16, 64, SCRW-32, 120, 12, 0x0E1A18);
+    gfx_text(30, 78, "Uptime (s):", 0x94A3B8, 1);
+    itoa((int)(g_ticks/100), b); gfx_text(190, 74, b, 0x6EE7B7, 2);
+    gfx_text(30, 110, "Trocas de contexto:", 0x94A3B8, 1);
+    itoa((int)g_switches, b); gfx_text(240, 106, b, 0xE5E7EB, 2);
+    gfx_text(30, 142, "Tarefas ativas:", 0x94A3B8, 1);
+    itoa(task_count(), b); gfx_text(200, 138, b, 0xFBBF24, 2);
+
+    gfx_round(16, 200, SCRW-32, 150, 12, 0x0E1A18);
+    gfx_text(30, 212, "contadores das tarefas:", 0xA7F3D0, 1);
+    for(int i = 0; i < 3; i++){
+        int y = 236 + i*36;
+        gfx_text(30, y, "tarefa", 0x94A3B8, 2);
+        itoa(i+1, b); gfx_text(30+7*16, y, b, 0x94A3B8, 2);
+        itoa((int)g_work[i], b); gfx_text(170, y, b, 0x6EE7B7, 2);
+    }
+
+    if(ui_button(16, 380, (SCRW-40)/2, 70, "criar tarefa", 0x2563EB, 0xFFFFFF, 2)) task_spawn();
+    if(ui_button(SCRW/2+4, 380, (SCRW-40)/2, 70, "parar", 0xDC2626, 0xFFFFFF, 2)) task_kill_demos();
+
+    gfx_text(20, 480, "multitarefa preemptiva real:", 0x94A3B8, 1);
+    gfx_text(20, 500, "o timer troca de tarefa 100x/s.", 0x94A3B8, 1);
+    gfx_text(20, 520, "crie tarefas e veja a UI dividir a", 0x94A3B8, 1);
+    gfx_text(20, 540, "CPU com elas (contadores subindo).", 0x94A3B8, 1);
+}
+
 /* ================= OLA-32 (nossa CPU) ================= */
 void app_ola32(void){
     static char out[512]; static int ran = 0;

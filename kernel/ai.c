@@ -59,22 +59,27 @@ void ai_feed(const char *p){
     if(rng == 0) rng = 1;
 }
 
-/* sementes coerentes (trechos do corpus) para o contexto inicial */
+/* sementes coerentes (trechos do corpus, >= M_CTX chars) para o contexto */
 static const char *SEEDS[] = {
-    "a gente a entender melhor o ",
-    "o sistema operacional cuida ",
-    "eu sou uma rede neural que ",
-    "obrigada por usar o olal e ",
-    "a tecnologia muda o mundo e ",
-    "vamos conversar mais sobre ",
-    "o computador e uma maquina ",
-    "pequenas coisas feitas com ",
+    "a gente a entender melhor o mundo ",
+    "o sistema operacional cuida da tela ",
+    "eu sou uma rede neural pequena que ",
+    "a tecnologia muda o mundo e nos ajuda ",
+    "vamos conversar mais sobre o seu dia ",
+    "o computador e uma maquina que segue ",
+    "a curiosidade move o ser humano a ",
+    "estudar um pouco a cada dia faz uma ",
+    "a leitura abre portas para mundos novos ",
+    "um amigo de verdade escuta e apoia ",
+    "respira fundo vai dar tudo certo um ",
+    "ajudar o proximo deixa o mundo um lugar ",
+    "acredite mais no seu potencial voce e ",
+    "a vida e feita de pequenos momentos que ",
 };
-#define NSEEDS 8
+#define NSEEDS (int)(sizeof(SEEDS)/sizeof(SEEDS[0]))
 
-/* gera ate maxlen caracteres a partir do contexto; retorna o tamanho */
+/* gera ate maxlen caracteres; varia a resposta conforme o prompt; coerente */
 int ai_step(char *out, int maxlen){
-    /* escolhe uma semente coerente em funcao do prompt + aleatoriedade */
     u32 h = 0;
     for(int i = 0; prompt[i]; i++) h = h*31 + (u8)prompt[i];
     const char *seed = SEEDS[(h + rnd()) % NSEEDS];

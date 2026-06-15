@@ -73,9 +73,17 @@ void app_config(void);
 void app_files(void);
 void app_paint(void);
 void app_ola32(void);
+void app_sistema(void);
 
 /* ----- OLA-32: nossa arquitetura de CPU ----- */
 int ola32_demo(char *out, int max);
+
+/* ----- interrupcoes + multitarefa ----- */
+void ints_init(void);
+extern volatile u32 g_ticks, g_switches, g_work[3];
+int  task_count(void);
+void task_spawn(void);
+void task_kill_demos(void);
 
 /* ----- IA (rede neural) ----- */
 void ai_reset(void);

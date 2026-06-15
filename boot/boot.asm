@@ -9,7 +9,7 @@
 
 KERNEL_PHYS   equ 0x10000        ; endereco fisico do kernel
 KERNEL_SEG    equ 0x1000         ; = KERNEL_PHYS / 16
-LOAD_SECTORS  equ 420            ; setores a carregar (cobre o kernel ~196 KB)
+LOAD_SECTORS  equ 760        ; cobre o kernel maior (IA + OLA-32)
 SPT           equ 18             ; setores por trilha (disquete 1.44MB)
 HEADS         equ 2
 
@@ -72,11 +72,30 @@ load_kernel:
     div cx                        ; AX = cilindro, DX = cabeca
     mov [c_cyl], al
     mov [c_head], dl
-    ; le 1 setor (multi-setor em disquete esbarra no limite de DMA de 64 KB)
+    ; quantos setores ler: min(restante, fim-da-trilha, fim-do-bloco-de-64KB)
+    mov al, SPT + 1
+    sub al, [c_sec]
+    movzx cx, al                  ; cx = disponiveis na trilha (1..18)
+    mov ax, [cur_seg]
+    and ax, 0x0FFF                ; paragrafo dentro do bloco de 64 KB
+    mov bx, 32
+    xor dx, dx
+    div bx                        ; ax = setores ja usados no bloco
+    mov bx, 128
+    sub bx, ax                    ; bx = setores ate o limite de 64 KB
+    cmp cx, bx
+    jbe .c1
+    mov cx, bx
+.c1:
+    cmp cx, bp
+    jbe .c2
+    mov cx, bp
+.c2:
+    mov [c_cnt], cx
     mov word [retry], 4
 .try:
     mov ah, 0x02
-    mov al, 1
+    mov al, [c_cnt]               ; varios setores de uma vez
     mov ch, [c_cyl]
     mov cl, [c_sec]
     mov dh, [c_head]
@@ -95,9 +114,12 @@ load_kernel:
     call print
     jmp $
 .ok:
-    inc di                        ; proximo LBA
-    dec bp                        ; um setor a menos
-    add word [cur_seg], 32        ; avanca 512 bytes (32 paragrafos)
+    mov ax, [c_cnt]
+    add di, ax                    ; LBA += cnt
+    sub bp, ax                    ; restantes -= cnt
+    mov dx, 32
+    mul dx                        ; ax = cnt * 32 paragrafos
+    add [cur_seg], ax
     jmp .next
 .done:
     popa
