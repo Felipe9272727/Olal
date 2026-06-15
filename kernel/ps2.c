@@ -25,7 +25,7 @@ void ptr_init(void){
 void ptr_poll(void){
     g_ptr.clicked = 0;
     int guard = 0;
-    while((inb(0x64) & 1) && guard++ < 64){
+    while((inb(0x64) & 1) && guard++ < 1024){   /* drena todo o buffer: cursor chega num frame */
         u8 st = inb(0x64);
         if(!(st & 0x20)){ inb(0x60); continue; }   /* dado do teclado: ignora */
         u8 b = inb(0x60);

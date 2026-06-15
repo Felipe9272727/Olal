@@ -13,6 +13,10 @@
   #screen_container div{display:none;}            /* esconde a camada de texto */
   #status{position:fixed;top:0;left:0;right:0;font:13px monospace;padding:8px;
             background:#000b;text-align:center;z-index:9;color:#6ee7b7;}
+  .ripple{position:fixed;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;
+            border:2px solid #6ee7b7;pointer-events:none;z-index:8;
+            animation:rip .4s ease-out forwards;}
+  @keyframes rip{from{transform:scale(.3);opacity:.9}to{transform:scale(1.1);opacity:0}}
 </style>
 </head>
 <body>
@@ -79,8 +83,16 @@ function toGuest(p){
 function press(p){ moveTo(p.x, p.y); emulator.bus.send("mouse-click", [1,0,0]); }
 function release(){ if(emulator) emulator.bus.send("mouse-click", [0,0,0]); }
 
+function ripple(cx, cy){
+    const r = document.createElement("div");
+    r.className = "ripple"; r.style.left = cx+"px"; r.style.top = cy+"px";
+    document.body.appendChild(r);
+    setTimeout(() => r.remove(), 420);
+}
+
 const sc = document.getElementById("screen_container");
-sc.addEventListener("touchstart", e => { e.preventDefault(); press(toGuest(e.touches[0])); }, {passive:false});
+sc.addEventListener("touchstart", e => { e.preventDefault();
+    const t = e.touches[0]; ripple(t.clientX, t.clientY); press(toGuest(t)); }, {passive:false});
 sc.addEventListener("touchmove",  e => { e.preventDefault(); const g=toGuest(e.touches[0]); moveTo(g.x,g.y); }, {passive:false});
 sc.addEventListener("touchend",   e => { e.preventDefault(); release(); }, {passive:false});
 sc.addEventListener("mousedown",  e => press(toGuest(e)));
@@ -95,6 +107,16 @@ function fit(){
 }
 setInterval(fit, 400);
 window.addEventListener("resize", fit);
+
+/* trava zoom/scroll do navegador para o toque ser preciso */
+document.addEventListener("gesturestart", e => e.preventDefault());
+document.addEventListener("touchmove", e => e.preventDefault(), {passive:false});
+let lastTouch = 0;
+document.addEventListener("touchend", e => {
+    const now = Date.now();
+    if(now - lastTouch < 300) e.preventDefault();   /* impede double-tap zoom */
+    lastTouch = now;
+}, {passive:false});
 </script>
 </body>
 </html>
