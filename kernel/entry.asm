@@ -5,6 +5,7 @@ extern kmain
 
 _start:
     mov esp, 0x90000
+    fninit                  ; inicializa a FPU (x87) para a IA usar float
     call kmain
 .hang:
     cli
