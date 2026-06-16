@@ -202,29 +202,246 @@ static void dhcp_recv(const u8 *d, int len){
     }
 }
 
-/* chamado pelo loop principal: recebe frames e cuida do DHCP */
+/* ---------- ARP (descobrir o MAC do gateway) ---------- */
+static u8 gw_mac[6];
+int net_gw_known = 0;
+static u16 ip_id = 1;
+
+static void arp_request(u32 ip){
+    u8 f[42]; int n = 0;
+    for(int i=0;i<6;i++) f[n++]=0xFF;
+    for(int i=0;i<6;i++) f[n++]=net_mac[i];
+    f[n++]=0x08; f[n++]=0x06; f[n++]=0x00; f[n++]=0x01;
+    f[n++]=0x08; f[n++]=0x00; f[n++]=6; f[n++]=4; f[n++]=0x00; f[n++]=0x01;
+    for(int i=0;i<6;i++) f[n++]=net_mac[i];
+    f[n++]=net_ip>>24; f[n++]=net_ip>>16; f[n++]=net_ip>>8; f[n++]=net_ip;
+    for(int i=0;i<6;i++) f[n++]=0;
+    f[n++]=ip>>24; f[n++]=ip>>16; f[n++]=ip>>8; f[n++]=ip;
+    ne2k_send(f, n);
+}
+
+/* envia um pacote IP unicast (roteado pelo gateway) */
+static void ip_send(u32 dst, u8 proto, const u8 *payload, int plen){
+    u8 f[1600]; int n = 0;
+    for(int i=0;i<6;i++) f[n++]=gw_mac[i];
+    for(int i=0;i<6;i++) f[n++]=net_mac[i];
+    f[n++]=0x08; f[n++]=0x00;
+    int ipoff = n, iplen = 20 + plen;
+    f[n++]=0x45; f[n++]=0x00; f[n++]=(iplen>>8); f[n++]=iplen;
+    f[n++]=(ip_id>>8); f[n++]=ip_id; ip_id++;
+    f[n++]=0x40; f[n++]=0x00; f[n++]=64; f[n++]=proto; f[n++]=0; f[n++]=0;
+    f[n++]=net_ip>>24; f[n++]=net_ip>>16; f[n++]=net_ip>>8; f[n++]=net_ip;
+    f[n++]=dst>>24; f[n++]=dst>>16; f[n++]=dst>>8; f[n++]=dst;
+    u16 c = ip_checksum(f+ipoff, 20); f[ipoff+10]=(c>>8); f[ipoff+11]=c;
+    for(int i=0;i<plen;i++) f[n++]=payload[i];
+    ne2k_send(f, n);
+}
+
+static void udp_send(u32 dst, u16 sport, u16 dport, const u8 *d, int dlen){
+    u8 p[600]; int n = 0;
+    p[n++]=(sport>>8); p[n++]=sport; p[n++]=(dport>>8); p[n++]=dport;
+    int ulen = 8 + dlen; p[n++]=(ulen>>8); p[n++]=ulen; p[n++]=0; p[n++]=0;
+    for(int i=0;i<dlen;i++) p[n++]=d[i];
+    ip_send(dst, 17, p, n);
+}
+
+/* ---------- DNS ---------- */
+u32 dns_result = 0; int dns_state = 0;    /* 0 idle,1 query,2 ok,3 falhou */
+static u16 dns_id = 0x4142;
+
+static void dns_query(const char *host){
+    u8 q[300]; int n = 0;
+    q[n++]=(dns_id>>8); q[n++]=dns_id; q[n++]=0x01; q[n++]=0x00;
+    q[n++]=0; q[n++]=1; q[n++]=0; q[n++]=0; q[n++]=0; q[n++]=0; q[n++]=0; q[n++]=0;
+    int i = 0;
+    while(host[i]){
+        int s = i; while(host[i] && host[i] != '.') i++;
+        q[n++] = i - s; for(int j=s;j<i;j++) q[n++]=host[j];
+        if(host[i]=='.') i++;
+    }
+    q[n++]=0; q[n++]=0; q[n++]=1; q[n++]=0; q[n++]=1;
+    dns_state = 1;
+    udp_send(net_dns, 5353, 53, q, n);
+}
+
+static void dns_recv(const u8 *d, int len){
+    if(len < 12) return;
+    int an = (d[6]<<8)|d[7];
+    if(an == 0){ dns_state = 3; return; }
+    int o = 12;
+    while(o < len && d[o]){ if((d[o]&0xC0)==0xC0){ o+=2; goto q; } o += d[o]+1; }
+    o++;
+q:  o += 4;
+    for(int a=0; a<an && o+12<=len; a++){
+        if((d[o]&0xC0)==0xC0) o += 2;
+        else { while(o<len && d[o]) o += d[o]+1; o++; }
+        int type = (d[o]<<8)|d[o+1]; o += 8;
+        int rdlen = (d[o]<<8)|d[o+1]; o += 2;
+        if(type==1 && rdlen==4){
+            dns_result = (d[o]<<24)|(d[o+1]<<16)|(d[o+2]<<8)|d[o+3];
+            dns_state = 2; return;
+        }
+        o += rdlen;
+    }
+    dns_state = 3;
+}
+
+/* ---------- TCP (cliente minimo) + HTTP ---------- */
+static struct { u32 dst; u16 sport, dport; u32 seq, ack; int state; } tcp;
+/* state: 0 fechado, 1 syn enviado, 2 estabelecido, 3 fechando */
+char http_buf[24000]; int http_len = 0; int http_phase = 0;
+/* http_phase: 0 idle, 1 dns, 2 conectando, 3 recebendo, 4 pronto, 5 erro */
+static char req_host[64], req_path[160];
+
+static void tcp_seg(u8 flags, const u8 *data, int dlen){
+    u8 s[1600]; int n = 0;
+    s[n++]=(tcp.sport>>8); s[n++]=tcp.sport; s[n++]=(tcp.dport>>8); s[n++]=tcp.dport;
+    s[n++]=tcp.seq>>24; s[n++]=tcp.seq>>16; s[n++]=tcp.seq>>8; s[n++]=tcp.seq;
+    s[n++]=tcp.ack>>24; s[n++]=tcp.ack>>16; s[n++]=tcp.ack>>8; s[n++]=tcp.ack;
+    s[n++]=0x50; s[n++]=flags; s[n++]=0x20; s[n++]=0x00;   /* offset 5, win 8192 */
+    int cpos = n; s[n++]=0; s[n++]=0; s[n++]=0; s[n++]=0;
+    for(int i=0;i<dlen;i++) s[n++]=data[i];
+    u32 sum = 0;
+    sum += (net_ip>>16)&0xFFFF; sum += net_ip&0xFFFF;
+    sum += (tcp.dst>>16)&0xFFFF; sum += tcp.dst&0xFFFF;
+    sum += 6; sum += n;
+    for(int i=0;i+1<n;i+=2) sum += (s[i]<<8)|s[i+1];
+    if(n&1) sum += s[n-1]<<8;
+    while(sum>>16) sum = (sum&0xFFFF)+(sum>>16);
+    u16 c = ~sum; s[cpos]=(c>>8); s[cpos+1]=c;
+    ip_send(tcp.dst, 6, s, n);
+}
+
+static void http_get_send(void){
+    char r[260]; int n = 0;
+    const char *p1 = "GET ";
+    for(int i=0;p1[i];i++) r[n++]=p1[i];
+    for(int i=0;req_path[i];i++) r[n++]=req_path[i];
+    const char *p2 = " HTTP/1.0\r\nHost: ";
+    for(int i=0;p2[i];i++) r[n++]=p2[i];
+    for(int i=0;req_host[i];i++) r[n++]=req_host[i];
+    const char *p3 = "\r\nConnection: close\r\nUser-Agent: Olal\r\n\r\n";
+    for(int i=0;p3[i];i++) r[n++]=p3[i];
+    tcp_seg(0x18, (u8*)r, n);          /* PSH|ACK */
+    tcp.seq += n;
+}
+
+static void tcp_input(const u8 *s, int len){
+    if(len < 20) return;
+    u8 flags = s[13];
+    u32 their_seq = (s[4]<<24)|(s[5]<<16)|(s[6]<<8)|s[7];
+    int doff = (s[12]>>4)*4;
+    int dlen = len - doff;
+
+    if(tcp.state == 1 && (flags & 0x12) == 0x12){     /* SYN+ACK */
+        tcp.ack = their_seq + 1;
+        tcp.seq = (s[8]<<24)|(s[9]<<16)|(s[10]<<8)|s[11];   /* their ack = nosso seq */
+        tcp.state = 2;
+        tcp_seg(0x10, 0, 0);            /* ACK */
+        http_get_send();
+        http_phase = 3;
+        return;
+    }
+    if(tcp.state >= 2){
+        if(dlen > 0){
+            for(int i=0;i<dlen && http_len < (int)sizeof(http_buf)-1; i++)
+                http_buf[http_len++] = s[doff+i];
+            http_buf[http_len] = 0;
+            tcp.ack = their_seq + dlen;
+            tcp_seg(0x10, 0, 0);        /* ACK dos dados */
+        }
+        if(flags & 0x01){              /* FIN */
+            tcp.ack = their_seq + dlen + 1;
+            tcp_seg(0x10, 0, 0);
+            tcp.state = 0;
+            http_phase = 4;            /* pronto */
+        }
+    }
+}
+
+static void tcp_connect(u32 dst, u16 port){
+    tcp.dst = dst; tcp.dport = port; tcp.sport = 40000 + (g_ticks & 0x3FFF);
+    tcp.seq = 0x1000 + (g_ticks * 7); tcp.ack = 0; tcp.state = 1;
+    http_len = 0; http_buf[0] = 0;
+    tcp_seg(0x02, 0, 0);               /* SYN */
+}
+
+/* inicia uma navegacao: separa host/caminho e comeca pelo DNS */
+void browse(const char *url){
+    int i = 0;
+    if(url[0]=='h'&&url[1]=='t'&&url[2]=='t'&&url[3]=='p'){
+        while(url[i] && url[i] != '/') i++;          /* pula http:// */
+        if(url[i]=='/'&&url[i+1]=='/') i+=2;
+    }
+    int h = 0;
+    while(url[i] && url[i] != '/' && h < 62) req_host[h++] = url[i++];
+    req_host[h] = 0;
+    int p = 0;
+    if(url[i] != '/') req_path[p++] = '/';
+    while(url[i] && p < 158) req_path[p++] = url[i++];
+    req_path[p] = 0;
+    http_len = 0; http_buf[0] = 0; dns_state = 0; http_phase = 1;
+    dns_query(req_host);
+}
+
+/* ---------- DHCP retransmit / loop principal ---------- */
 void net_poll(void){
     if(!net_have_nic) return;
     static u8 buf[1600];
-    for(int k = 0; k < 8; k++){
+    for(int k = 0; k < 12; k++){
         int len = ne2k_poll(buf, sizeof(buf));
         if(!len) break;
         u16 eth = (buf[12]<<8) | buf[13];
-        if(eth == 0x0800 && len >= 14+20+8){           /* IPv4 */
+        if(eth == 0x0806 && len >= 42){              /* ARP */
+            u16 oper = (buf[20]<<8)|buf[21];
+            if(oper == 2){                            /* reply: aprende MAC */
+                u32 sip = (buf[28]<<24)|(buf[29]<<16)|(buf[30]<<8)|buf[31];
+                if(sip == net_gw){ for(int i=0;i<6;i++) gw_mac[i]=buf[22+i]; net_gw_known=1; }
+            } else if(oper == 1){                     /* request p/ nosso IP: responde */
+                u32 tip = (buf[38]<<24)|(buf[39]<<16)|(buf[40]<<8)|buf[41];
+                if(tip == net_ip && net_ip){
+                    u8 r[42]; int n=0;
+                    for(int i=0;i<6;i++) r[n++]=buf[6+i];
+                    for(int i=0;i<6;i++) r[n++]=net_mac[i];
+                    r[n++]=0x08;r[n++]=0x06;r[n++]=0;r[n++]=1;r[n++]=0x08;r[n++]=0;
+                    r[n++]=6;r[n++]=4;r[n++]=0;r[n++]=2;
+                    for(int i=0;i<6;i++) r[n++]=net_mac[i];
+                    r[n++]=net_ip>>24;r[n++]=net_ip>>16;r[n++]=net_ip>>8;r[n++]=net_ip;
+                    for(int i=0;i<6;i++) r[n++]=buf[22+i];
+                    for(int i=0;i<4;i++) r[n++]=buf[28+i];
+                    ne2k_send(r, n);
+                }
+            }
+        }
+        else if(eth == 0x0800 && len >= 34){          /* IPv4 */
             int ihl = (buf[14] & 0x0F) * 4;
-            if(buf[14+9] == 17){                        /* UDP */
-                int uoff = 14 + ihl;
-                u16 dport = (buf[uoff+2]<<8)|buf[uoff+3];
-                if(dport == 68)                          /* resposta DHCP */
-                    dhcp_recv(buf + uoff + 8, len - uoff - 8);
+            u8 proto = buf[14+9];
+            int off = 14 + ihl;
+            if(proto == 17){                           /* UDP */
+                u16 dport = (buf[off+2]<<8)|buf[off+3];
+                u16 sport = (buf[off+0]<<8)|buf[off+1];
+                if(dport == 68) dhcp_recv(buf+off+8, len-off-8);
+                else if(sport == 53) dns_recv(buf+off+8, len-off-8);
+            } else if(proto == 6){                     /* TCP */
+                u16 dport = (buf[off+2]<<8)|buf[off+3];
+                if(dport == tcp.sport) tcp_input(buf+off, len-off);
             }
         }
     }
-    /* reenvia DHCP se ainda nao ligou (timeout ~1.5s) */
+
     if(dhcp_state && dhcp_state < 3 && (g_ticks - last_send_tick) > 150){
         dhcp_send(dhcp_state == 1 ? 1 : 3);
         last_send_tick = g_ticks;
     }
+    /* depois do DHCP, descobre o MAC do gateway */
+    if(dhcp_state == 3 && !net_gw_known && (g_ticks - last_send_tick) > 30){
+        arp_request(net_gw); last_send_tick = g_ticks;
+    }
+    /* maquina de navegacao: DNS pronto -> conecta */
+    if(http_phase == 1 && dns_state == 2){
+        if(net_gw_known){ tcp_connect(dns_result, 80); http_phase = 2; }
+    }
+    if(http_phase == 1 && dns_state == 3) http_phase = 5;   /* dns falhou */
 }
 
 void net_init(void){

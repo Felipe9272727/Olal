@@ -38,6 +38,7 @@ static App apps[] = {
     {"OLA-32",  0x8B5CF6, "C"},
     {"Sistema", 0x10B981, "S"},
     {"Rede",    0x0EA5E9, "@"},
+    {"Navegador",0xF97316, "W"},
 };
 #define NAPPS (int)(sizeof(apps)/sizeof(apps[0]))
 
@@ -94,6 +95,7 @@ static void draw_app(void){
         case 8: app_ola32();    break;
         case 9: app_sistema();  break;
         case 10: app_rede();    break;
+        case 11: app_browser(); break;
         default: g_screen = -1; break;
     }
 }

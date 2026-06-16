@@ -88,8 +88,12 @@ extern u8 net_mac[6];
 extern int net_have_nic;
 extern volatile u32 net_tx, net_rx;
 extern u32 net_ip, net_gw, net_dns, net_mask;
-extern int dhcp_state;
+extern int dhcp_state, net_gw_known, dns_state;
+extern u32 dns_result;
+void browse(const char *url);
+extern char http_buf[]; extern int http_len, http_phase;
 void app_rede(void);
+void app_browser(void);
 
 /* ----- memoria dinamica (heap) ----- */
 void  heap_init(void);
