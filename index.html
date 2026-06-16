@@ -88,38 +88,50 @@ try {
             try{ const ac=new AbortController(); const tm=setTimeout(()=>ac.abort(),9000);
                  const r=await fetch(mk(target),{redirect:"follow",signal:ac.signal}); clearTimeout(tm);
                  let body=await r.text(); console.log("[net] recebeu "+body.length+" bytes");
-                 if(body) return body.slice(0,20000); }catch(e){ console.log("[net] proxy falhou: "+e); }
+                 if(body){
+                     let bad=0; for(let i=0;i<Math.min(body.length,300);i++) if(body.charCodeAt(i)===0xFFFD) bad++;
+                     if(bad>40) return "<p>[imagem]</p>";   /* conteudo binario (imagem) */
+                     return body.slice(0,20000);
+                 } }catch(e){ console.log("[net] proxy falhou: "+e); }
         }
         return "<h1>Sem internet</h1><p>O navegador nao alcancou a rede (proxy fora ou sem conexao). A pilha do kernel funcionou ate aqui.</p>";
     }
     /* baixa as imagens da pagina, decodifica no navegador e manda os pixels
        (RGB) para a RAM do kernel, que so desenha. O kernel nao precisa de
        decodificador de JPEG/PNG: o navegador ja sabe abrir qualquer imagem. */
-    async function processImages(host, html){
+    function absUrl(s, host){
+        if(s.indexOf("http")===0) return s;
+        if(s.indexOf("//")===0) return "https:"+s;
+        return "https://"+host+(s[0]==="/"?"":"/")+s;
+    }
+    async function fetchImg(u){                 /* tenta os dois proxies; decodifica qualquer formato */
+        for(const mk of PROXIES){
+            try{ const r=await fetch(mk(u)); const blob=await r.blob();
+                 return await createImageBitmap(blob); }catch(e){}
+        }
+        return null;
+    }
+    async function processImages(host, path, html){
         try{
             emulator.write_memory(new Uint8Array([0,0,0,0]), 0x600004);   /* zera contagem */
-            const re=/<img[^>]+src\s*=\s*["']?([^"'\s>]+)/gi; let m, srcs=[];
-            while((m=re.exec(html)) && srcs.length<6) srcs.push(m[1]);
+            let urls=[absUrl(path, host)];      /* a propria URL, caso seja uma imagem */
+            const re=/<img[^>]+?(?:data-src|src)\s*=\s*["']?([^"'\s>]+)/gi; let m;
+            while((m=re.exec(html)) && urls.length<7) urls.push(absUrl(m[1], host));
             let count=0, pixoff=0, y=300;
-            for(const src of srcs){
-                let u = src.indexOf("http")===0 ? src : src.indexOf("//")===0 ? "https:"+src
-                      : "https://"+host+(src[0]==="/"?"":"/")+src;
-                try{
-                    const r=await fetch(PROXIES[0](u)); const blob=await r.blob();
-                    const bmp=await createImageBitmap(blob);
-                    const sc=Math.min(440/bmp.width, 150/bmp.height, 1);
-                    const w=Math.max(1,Math.round(bmp.width*sc)), h=Math.max(1,Math.round(bmp.height*sc));
-                    if(y+h>538) break;
-                    const cv=new OffscreenCanvas(w,h); const cx=cv.getContext("2d"); cx.drawImage(bmp,0,0,w,h);
-                    const d=cx.getImageData(0,0,w,h).data;
-                    const rgb=new Uint8Array(w*h*3); for(let i=0,j=0;i<d.length;i+=4){rgb[j++]=d[i];rgb[j++]=d[i+1];rgb[j++]=d[i+2];}
-                    emulator.write_memory(rgb, 0x601000+pixoff);
-                    const hd=new ArrayBuffer(20); const dv=new DataView(hd);
-                    dv.setUint32(0,20,true);dv.setUint32(4,y,true);dv.setUint32(8,w,true);dv.setUint32(12,h,true);dv.setUint32(16,pixoff,true);
-                    emulator.write_memory(new Uint8Array(hd), 0x600010+count*20);
-                    pixoff+=w*h*3; y+=h+6; count++;
-                    emulator.write_memory(new Uint8Array(new Uint32Array([count]).buffer), 0x600004);
-                }catch(e){}
+            for(const u of urls){
+                const bmp=await fetchImg(u); if(!bmp) continue;
+                const sc=Math.min(440/bmp.width, 160/bmp.height, 1);
+                const w=Math.max(1,Math.round(bmp.width*sc)), h=Math.max(1,Math.round(bmp.height*sc));
+                if(y+h>538) break;
+                const cv=new OffscreenCanvas(w,h); const cx=cv.getContext("2d"); cx.drawImage(bmp,0,0,w,h);
+                const d=cx.getImageData(0,0,w,h).data;
+                const rgb=new Uint8Array(w*h*3); for(let i=0,j=0;i<d.length;i+=4){rgb[j++]=d[i];rgb[j++]=d[i+1];rgb[j++]=d[i+2];}
+                emulator.write_memory(rgb, 0x601000+pixoff);
+                const hd=new ArrayBuffer(20); const dv=new DataView(hd);
+                dv.setUint32(0,20,true);dv.setUint32(4,y,true);dv.setUint32(8,w,true);dv.setUint32(12,h,true);dv.setUint32(16,pixoff,true);
+                emulator.write_memory(new Uint8Array(hd), 0x600010+count*20);
+                pixoff+=w*h*3; y+=h+6; count++;
+                emulator.write_memory(new Uint8Array(new Uint32Array([count]).buffer), 0x600004);
             }
         }catch(e){}
     }
@@ -158,8 +170,8 @@ try {
                     if(!c.fetching){ c.fetching=1;
                         emulator.write_memory(new Uint8Array([0,0,0,0]), 0x600004);  /* limpa imagens antigas */
                         const m=req.match(/^GET\s+(\S+)\s/), hm=req.match(/Host:\s*([^\r\n]+)/i);
-                        const host=hm?hm[1].trim():"";
-                        fetchPage(host, m?m[1]:"/").then(b=>{ c.body=b; processImages(host, b); });
+                        const host=hm?hm[1].trim():"", path=m?m[1]:"/";
+                        fetchPage(host, path).then(b=>{ c.body=b; processImages(host, path, b); });
                     }
                     /* injeta a resposta SINCRONO numa retransmissao do GET (assim
                        o v86 processa o frame; injecao assincrona nao funciona) */
