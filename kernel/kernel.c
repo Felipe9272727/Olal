@@ -37,6 +37,7 @@ static App apps[] = {
     {"Paint",   0xEF4444, "P"},
     {"OLA-32",  0x8B5CF6, "C"},
     {"Sistema", 0x10B981, "S"},
+    {"Rede",    0x0EA5E9, "@"},
 };
 #define NAPPS (int)(sizeof(apps)/sizeof(apps[0]))
 
@@ -92,6 +93,7 @@ static void draw_app(void){
         case 7: app_paint();    break;
         case 8: app_ola32();    break;
         case 9: app_sistema();  break;
+        case 10: app_rede();    break;
         default: g_screen = -1; break;
     }
 }
@@ -110,9 +112,11 @@ void kmain(void){
     ptr_init();
     heap_init();            /* memoria dinamica (malloc/free) */
     ints_init();            /* interrupcoes + timer + multitarefa */
+    net_init();             /* rede: driver NE2000 + envio de teste */
 
     for(;;){
         ptr_poll();
+        net_poll();
         if(g_screen < 0) draw_home();
         else draw_app();
         draw_cursor();

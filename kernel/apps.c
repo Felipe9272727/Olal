@@ -166,6 +166,47 @@ void app_paint(void){
     if(ui_button(SCRW-90, SCRH-58, 78, 48, "limpar", 0x374151, 0xFFFFFF, 1)) npts = 0;
 }
 
+/* ================= Rede ================= */
+static void ip_str(u32 ip, char *out){
+    char b[8]; int k = 0;
+    for(int s = 24; s >= 0; s -= 8){
+        itoa((ip >> s) & 0xFF, b);
+        for(int i = 0; b[i]; i++) out[k++] = b[i];
+        if(s) out[k++] = '.';
+    }
+    out[k] = 0;
+}
+void app_rede(void){
+    gfx_vgrad(0,0,SCRW,SCRH, 0x0A1A2E, 0x05070C);
+    ui_topbar("Rede");
+    char b[40];
+
+    gfx_round(16, 64, SCRW-32, 220, 12, 0x0E1A2A);
+    const char *st = !net_have_nic ? "sem placa"
+                   : dhcp_state == 3 ? "conectado (DHCP)"
+                   : "obtendo IP...";
+    u32 col = (dhcp_state == 3) ? 0x2BD17A : (net_have_nic ? 0xFBBF24 : 0xEF4444);
+    gfx_text(30, 78, "status:", 0x94A3B8, 1);
+    gfx_text(110, 74, st, col, 2);
+
+    gfx_text(30, 112, "placa: NE2000 (RTL8029)", 0xCBD5E1, 1);
+    int k = 0; const char *hex = "0123456789abcdef";
+    for(int i = 0; i < 6; i++){ b[k++]=hex[net_mac[i]>>4]; b[k++]=hex[net_mac[i]&15]; if(i<5) b[k++]=':'; }
+    b[k]=0;
+    gfx_text(30, 134, "MAC:", 0x94A3B8, 1); gfx_text(90, 134, b, 0xE5E7EB, 1);
+
+    ip_str(net_ip, b);  gfx_text(30, 168, "IP:", 0x94A3B8, 1);  gfx_text(80, 164, b, 0x6EE7B7, 2);
+    ip_str(net_gw, b);  gfx_text(30, 200, "gateway:", 0x94A3B8, 1); gfx_text(160, 198, b, 0xE5E7EB, 1);
+    ip_str(net_dns, b); gfx_text(30, 222, "DNS:", 0x94A3B8, 1); gfx_text(160, 220, b, 0xE5E7EB, 1);
+    itoa((int)net_rx, b); gfx_text(30, 250, "frames RX/TX:", 0x94A3B8, 1);
+    gfx_text(200, 248, b, 0xE5E7EB, 1);
+    itoa((int)net_tx, b); gfx_text(200+gfx_textw("0000",1)+8, 248, b, 0xE5E7EB, 1);
+
+    gfx_text(20, 320, "pilha de rede do zero no kernel:", 0x94A3B8, 1);
+    gfx_text(20, 340, "NE2000 + Ethernet + ARP + IP + UDP", 0x6EE7B7, 1);
+    gfx_text(20, 360, "+ DHCP. (no navegador precisa de relay)", 0x6EE7B7, 1);
+}
+
 /* ================= Sistema (multitarefa) ================= */
 void app_sistema(void){
     gfx_vgrad(0,0,SCRW,SCRH, 0x0B1F1A, 0x05070C);

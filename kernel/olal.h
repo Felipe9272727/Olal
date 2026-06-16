@@ -78,6 +78,19 @@ void app_sistema(void);
 /* ----- OLA-32: nossa arquitetura de CPU ----- */
 int ola32_demo(char *out, int max);
 
+/* ----- rede (NE2000 + pilha) ----- */
+void net_init(void);
+void net_poll(void);
+void dhcp_start(void);
+void ne2k_send(const u8 *frame, int len);
+int  ne2k_poll(u8 *buf, int max);
+extern u8 net_mac[6];
+extern int net_have_nic;
+extern volatile u32 net_tx, net_rx;
+extern u32 net_ip, net_gw, net_dns, net_mask;
+extern int dhcp_state;
+void app_rede(void);
+
 /* ----- memoria dinamica (heap) ----- */
 void  heap_init(void);
 void *kmalloc(u32 n);
