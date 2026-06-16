@@ -167,12 +167,29 @@ void app_paint(void){
 }
 
 /* ================= Navegador ================= */
-/* renderiza HTML como texto (tira as tags) numa area */
+/* compara case-insensitive os primeiros n chars */
+static int ci_eq(const char *a, const char *b, int n){
+    for(int i=0;i<n;i++){ char x=a[i]; if(x>='A'&&x<='Z') x+=32; if(x!=b[i]) return 0; }
+    return 1;
+}
+/* renderiza HTML como texto: tira as tags e o conteudo de script/style */
 static void render_html(int x, int y, int maxcols, int maxrows, const char *t){
     int cx = x, row = 0, col = 0, intag = 0, sp = 1;
     for(int i = 0; t[i] && row < maxrows; i++){
         char c = t[i];
-        if(c == '<'){ intag = 1; continue; }
+        if(c == '<'){
+            /* pula blocos <script>...</script> e <style>...</style> inteiros */
+            const char *close = 0; int cl = 0;
+            if(ci_eq(t+i+1, "script", 6)){ close = "</script"; cl = 8; }
+            else if(ci_eq(t+i+1, "style", 5)){ close = "</style"; cl = 7; }
+            if(close){
+                i++;
+                while(t[i] && !ci_eq(t+i, close, cl)) i++;
+                while(t[i] && t[i] != '>') i++;
+                sp = 1; continue;
+            }
+            intag = 1; continue;
+        }
         if(c == '>'){ intag = 0; c = ' '; }
         if(intag) continue;
         if(c == '\n' || c == '\r' || c == '\t') c = ' ';
@@ -208,11 +225,12 @@ void app_browser(void){
         for(; http_buf[i]; i++)
             if(http_buf[i]=='\n' && http_buf[i+1]=='\r' && http_buf[i+2]=='\n'){ body=http_buf+i+3; break; }
             else if(http_buf[i]=='\n' && http_buf[i+1]=='\n'){ body=http_buf+i+2; break; }
-        render_html(16, 130, 56, 10, body);
-        /* imagens decodificadas pelo JS do navegador e enviadas como pixels */
         volatile u32 *stg = (volatile u32*)0x600000;
         int nimg = (int)stg[1];
-        if(nimg > 0 && nimg <= 12){
+        if(nimg < 0 || nimg > 12) nimg = 0;
+        render_html(16, 130, 56, nimg > 0 ? 10 : 25, body);
+        /* imagens decodificadas pelo JS do navegador e enviadas como pixels */
+        if(nimg > 0){
             for(int k = 0; k < nimg; k++){
                 volatile u32 *h = (volatile u32*)(0x600010u + k*20);
                 int ix=(int)h[0], iy=(int)h[1], iw=(int)h[2], ih=(int)h[3]; u32 poff=h[4];
