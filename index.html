@@ -2,6 +2,9 @@
 <html lang="pt-br">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Olal OS</title>
 <style>
@@ -39,7 +42,7 @@ try {
         bios:     { url: "lib/seabios.bin" },
         vga_bios: { url: "lib/vgabios.bin" },
         fda:      { url: "olal.img" },
-        net_device: { type: "ne2k", relay_url: "wss://relay.widgetry.org/" },
+        net_device: { type: "ne2k" },   /* sem relay publico confiavel hoje (rede so com gateway proprio) */
         memory_size: 64 * 1024 * 1024,
         vga_memory_size: 16 * 1024 * 1024,
         screen_container: document.getElementById("screen_container"),
