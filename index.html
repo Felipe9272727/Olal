@@ -39,6 +39,7 @@ try {
         bios:     { url: "lib/seabios.bin" },
         vga_bios: { url: "lib/vgabios.bin" },
         fda:      { url: "olal.img" },
+        net_device: { type: "ne2k", relay_url: "wss://relay.widgetry.org/" },
         memory_size: 64 * 1024 * 1024,
         vga_memory_size: 16 * 1024 * 1024,
         screen_container: document.getElementById("screen_container"),
