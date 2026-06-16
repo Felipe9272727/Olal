@@ -184,7 +184,7 @@ static void render_html(int x, int y, int maxcols, int maxrows, const char *t){
     }
 }
 void app_browser(void){
-    static char url[160] = "example.com"; static int ulen = 11; static int go = 0;
+    static char url[160] = "captive.apple.com"; static int ulen = 17; static int go = 0;
     gfx_rect(0,0,SCRW,SCRH, 0x0B1220);
     ui_topbar("Navegador");
 

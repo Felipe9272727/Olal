@@ -71,8 +71,11 @@ static void ne_write(u16 dst, const u8 *buf, int len){
 
 void ne2k_send(const u8 *frame, int len){
     if(!net_have_nic) return;
-    if(len < 60) len = 60;                    /* tamanho minimo Ethernet */
-    ne_write(TXSTART << 8, frame, len);
+    static u8 tb[1600];
+    int i = 0; for(; i < len && i < 1600; i++) tb[i] = frame[i];
+    while(i < 60) tb[i++] = 0;                 /* zera o padding minimo */
+    len = i;
+    ne_write(TXSTART << 8, tb, len);
     ne_out(NE_TPSR, TXSTART);
     ne_out(NE_TBCR0, len & 0xFF); ne_out(NE_TBCR1, (len>>8)&0xFF);
     ne_out(NE_CR, 0x26);                       /* transmit + start */
@@ -94,7 +97,16 @@ int ne2k_poll(u8 *buf, int max){
     int len = (hdr[3] << 8 | hdr[2]) - 4;
     if(len < 0) len = 0;
     if(len > max) len = max;
-    ne_read((next << 8) + 4, buf, len);
+    /* le os dados tratando a volta do anel (ring wrap) */
+    u32 start = (next << 8) + 4;
+    u32 ringend = RXSTOP << 8;
+    if(start + len > ringend){
+        int first = ringend - start;
+        ne_read(start, buf, first);
+        ne_read(RXSTART << 8, buf + first, len - first);
+    } else {
+        ne_read(start, buf, len);
+    }
 
     u8 nx = hdr[1];                            /* proxima pagina */
     u8 nb = (nx == RXSTART) ? RXSTOP - 1 : nx - 1;
@@ -248,8 +260,10 @@ static void udp_send(u32 dst, u16 sport, u16 dport, const u8 *d, int dlen){
 /* ---------- DNS ---------- */
 u32 dns_result = 0; int dns_state = 0;    /* 0 idle,1 query,2 ok,3 falhou */
 static u16 dns_id = 0x4142;
+static u32 dns_tick = 0;
 
 static void dns_query(const char *host){
+    dns_tick = g_ticks;
     u8 q[300]; int n = 0;
     q[n++]=(dns_id>>8); q[n++]=dns_id; q[n++]=0x01; q[n++]=0x00;
     q[n++]=0; q[n++]=1; q[n++]=0; q[n++]=0; q[n++]=0; q[n++]=0; q[n++]=0; q[n++]=0;
@@ -317,7 +331,7 @@ static void http_get_send(void){
     const char *p1 = "GET ";
     for(int i=0;p1[i];i++) r[n++]=p1[i];
     for(int i=0;req_path[i];i++) r[n++]=req_path[i];
-    const char *p2 = " HTTP/1.0\r\nHost: ";
+    const char *p2 = " HTTP/1.1\r\nHost: ";
     for(int i=0;p2[i];i++) r[n++]=p2[i];
     for(int i=0;req_host[i];i++) r[n++]=req_host[i];
     const char *p3 = "\r\nConnection: close\r\nUser-Agent: Olal\r\n\r\n";
@@ -349,6 +363,19 @@ static void tcp_input(const u8 *s, int len){
             http_buf[http_len] = 0;
             tcp.ack = their_seq + dlen;
             tcp_seg(0x10, 0, 0);        /* ACK dos dados */
+            /* completa pela Content-Length (sem depender do FIN) */
+            int he = -1;
+            for(int i=0;i+3<http_len;i++)
+                if(http_buf[i]=='\r'&&http_buf[i+1]=='\n'&&http_buf[i+2]=='\r'&&http_buf[i+3]=='\n'){ he=i+4; break; }
+            if(he >= 0){
+                int cl = -1;
+                for(int i=0;i+16<he;i++)
+                    if((http_buf[i]=='C'||http_buf[i]=='c')&&(http_buf[i+1]=='o')&&http_buf[i+8]=='-'){
+                        int j=i+14; while(http_buf[j]==' '||http_buf[j]==':') j++;
+                        if(http_buf[j]>='0'&&http_buf[j]<='9'){ cl=0; while(http_buf[j]>='0'&&http_buf[j]<='9'){ cl=cl*10+(http_buf[j]-'0'); j++; } break; }
+                    }
+                if(cl >= 0 && http_len >= he + cl) http_phase = 4;
+            }
         }
         if(flags & 0x01){              /* FIN */
             tcp.ack = their_seq + dlen + 1;
@@ -369,9 +396,9 @@ static void tcp_connect(u32 dst, u16 port){
 /* inicia uma navegacao: separa host/caminho e comeca pelo DNS */
 void browse(const char *url){
     int i = 0;
-    if(url[0]=='h'&&url[1]=='t'&&url[2]=='t'&&url[3]=='p'){
-        while(url[i] && url[i] != '/') i++;          /* pula http:// */
-        if(url[i]=='/'&&url[i+1]=='/') i+=2;
+    /* pula o esquema "http://" apenas se houver "://" */
+    for(int j = 0; url[j] && url[j] != '/'; j++){
+        if(url[j]==':' && url[j+1]=='/' && url[j+2]=='/'){ i = j+3; break; }
     }
     int h = 0;
     while(url[i] && url[i] != '/' && h < 62) req_host[h++] = url[i++];
@@ -417,6 +444,8 @@ void net_poll(void){
             int ihl = (buf[14] & 0x0F) * 4;
             u8 proto = buf[14+9];
             int off = 14 + ihl;
+            int iptot = (buf[16]<<8) | buf[17];        /* tamanho real (sem padding) */
+            if(14 + iptot < len) len = 14 + iptot;
             if(proto == 17){                           /* UDP */
                 u16 dport = (buf[off+2]<<8)|buf[off+3];
                 u16 sport = (buf[off+0]<<8)|buf[off+1];
@@ -437,6 +466,9 @@ void net_poll(void){
     if(dhcp_state == 3 && !net_gw_known && (g_ticks - last_send_tick) > 30){
         arp_request(net_gw); last_send_tick = g_ticks;
     }
+    /* retransmite a query DNS se a resposta nao chegou */
+    if(http_phase == 1 && dns_state == 1 && net_gw_known && (g_ticks - dns_tick) > 80)
+        dns_query(req_host);
     /* maquina de navegacao: DNS pronto -> conecta */
     if(http_phase == 1 && dns_state == 2){
         if(net_gw_known){ tcp_connect(dns_result, 80); http_phase = 2; }
