@@ -210,35 +210,83 @@ static void ddg_home(const char *q){
     gfx_text_center(SCRW/2, 410, "Busca real, sem rastreamento", 0x70757A, 1);
     gfx_text_center(SCRW/2, 432, "digite e toque em Ir", 0x9AA0A6, 1);
 }
-/* renderiza markdown (saida do leitor r.jina.ai) como texto limpo:
-   [texto](url) -> mostra so o texto (em azul); pula imagens, *, #, ` */
-static void render_md(int x, int y, int maxcols, int maxrows, const char *t){
+/* ---- links clicaveis encontrados no conteudo renderizado ---- */
+#define MAXBOX 80
+#define MAXURL 48
+static struct { short x, y, w, u; } g_box[MAXBOX];
+static int g_nbox;
+static char g_url[MAXURL][112];
+static int g_nurl;
+static int hexv(char c){ if(c>='0'&&c<='9')return c-'0'; if(c>='a'&&c<='f')return c-'a'+10;
+                         if(c>='A'&&c<='F')return c-'A'+10; return -1; }
+/* extrai o alvo real do link: usa o parametro uddg= do DuckDuckGo (decodificado) */
+static void decode_link(const char *s, int len, char *out, int max){
+    const char *src = s; int slen = len;
+    for(int i=0;i+5<len;i++)
+        if(s[i]=='u'&&s[i+1]=='d'&&s[i+2]=='d'&&s[i+3]=='g'&&s[i+4]=='='){ src=s+i+5; slen=len-(i+5); break; }
+    int n=0;
+    for(int i=0; i<slen && n<max-1; i++){
+        char c=src[i];
+        if(src!=s && c=='&') break;        /* fim do parametro uddg */
+        if(c=='%'){ int hi=hexv(src[i+1]), lo=hexv(src[i+2]);
+                    if(hi>=0&&lo>=0){ c=(char)(hi*16+lo); i+=2; } }
+        else if(c=='+') c=' ';
+        out[n++]=c;
+    }
+    out[n]=0;
+}
+/* renderiza markdown (saida do r.jina.ai) com rolagem e links clicaveis.
+   y0 = topo logico; scroll = pixels rolados; clipa em [ct, cb). Retorna nº de linhas. */
+static int render_md(int x, int y0, int maxcols, int ct, int cb, int scroll, const char *t){
     int row=0, col=0, sp=1;
+    g_nbox=0; g_nurl=0;
     /* pula o preambulo do leitor jina: "...Markdown Content:\n" */
-    for(int i=0; t[i]; i++){
-        if(t[i]=='M' && t[i+1]=='a' && t[i+2]=='r' && t[i+3]=='k' &&
-           t[i+4]=='d' && t[i+5]=='o' && t[i+6]=='w' && t[i+7]=='n' &&
-           t[i+8]==' ' && t[i+9]=='C'){
+    for(int i=0; t[i] && i<400; i++){
+        if(t[i]=='M'&&t[i+1]=='a'&&t[i+2]=='r'&&t[i+3]=='k'&&t[i+4]=='d'&&
+           t[i+5]=='o'&&t[i+6]=='w'&&t[i+7]=='n'&&t[i+8]==' '&&t[i+9]=='C'){
             int j=i+10; while(t[j] && t[j]!='\n') j++; if(t[j]=='\n') j++;
             t = t+j; break;
         }
-        if(i>400) break;   /* preambulo e curto; nao varre demais */
     }
-    for(int i=0; t[i] && row<maxrows; i++){
+    for(int i=0; t[i]; i++){
         char c = t[i];
-        if(c=='!' && t[i+1]=='['){ i++; continue; }     /* imagem ![..] -> ignora marca */
+        if(c=='!' && t[i+1]=='['){       /* imagem ![alt](url) -> pula tudo */
+            i+=2; while(t[i] && t[i]!=']') i++; if(t[i]==']') i++;
+            if(t[i]=='('){ int d=1; i++; while(t[i] && d){ if(t[i]=='(')d++; else if(t[i]==')')d--; i++; } }
+            i--; continue;
+        }
         if(c=='['){
+            int uidx = (g_nurl<MAXURL) ? g_nurl : -1;
+            int segc = col, segr = row;
             i++;
-            while(t[i] && t[i]!=']' && row<maxrows){
+            while(t[i] && t[i]!=']'){
+                if(t[i]=='!' && t[i+1]=='['){    /* imagem dentro do link: pula */
+                    i+=2; while(t[i] && t[i]!=']') i++; if(t[i]==']') i++;
+                    if(t[i]=='('){ int d2=1; i++; while(t[i] && d2){ if(t[i]=='(')d2++; else if(t[i]==')')d2--; i++; } }
+                    continue;
+                }
                 char d=t[i++]; if(d=='\n'||d=='\r'||d=='\t') d=' ';
                 if(d==' '){ if(sp) continue; sp=1; } else sp=0;
                 if((unsigned char)d<32 || (unsigned char)d>126) continue;
-                gfx_char(x+col*8, y+row*16, d, 0x6AB7FF, 1);
-                col++; if(col>=maxcols){ col=0; row++; }
+                int sy = y0 + row*16 - scroll;
+                if(sy>=ct && sy<cb) gfx_char(x+col*8, sy, d, 0x6AB7FF, 1);
+                col++;
+                if(col>=maxcols){
+                    int by=y0+segr*16-scroll;
+                    if(uidx>=0 && g_nbox<MAXBOX && by>=ct-16 && by<cb){
+                        g_box[g_nbox].x=x+segc*8; g_box[g_nbox].y=by;
+                        g_box[g_nbox].w=(col-segc)*8; g_box[g_nbox].u=uidx; g_nbox++; }
+                    col=0; row++; segc=0; segr=row;
+                }
             }
+            int by=y0+segr*16-scroll;
+            if(uidx>=0 && col>segc && g_nbox<MAXBOX && by>=ct-16 && by<cb){
+                g_box[g_nbox].x=x+segc*8; g_box[g_nbox].y=by;
+                g_box[g_nbox].w=(col-segc)*8; g_box[g_nbox].u=uidx; g_nbox++; }
             if(t[i]==']') i++;
-            if(t[i]=='('){ int depth=1; i++;        /* pula (url), respeitando parenteses aninhados */
-                while(t[i] && depth){ if(t[i]=='(') depth++; else if(t[i]==')') depth--; i++; } }
+            if(t[i]=='('){ int depth=1; i++; int us=i;
+                while(t[i] && depth){ if(t[i]=='(')depth++; else if(t[i]==')')depth--; i++; }
+                if(uidx>=0){ decode_link(t+us, (i-1)-us, g_url[uidx], 112); g_nurl++; } }
             i--; sp=0; continue;
         }
         if(c=='*'||c=='#'||c=='`'||c=='_'||c=='|') continue;  /* sintaxe md */
@@ -247,9 +295,11 @@ static void render_md(int x, int y, int maxcols, int maxrows, const char *t){
         if(c==' '){ if(sp) continue; sp=1; } else sp=0;
         if(c==' ' && col==0) continue;
         if((unsigned char)c<32 || (unsigned char)c>126) continue;
-        gfx_char(x+col*8, y+row*16, c, 0xD1D5DB, 1);
+        int sy = y0 + row*16 - scroll;
+        if(sy>=ct && sy<cb) gfx_char(x+col*8, sy, c, 0xD1D5DB, 1);
         col++; if(col>=maxcols){ col=0; row++; }
     }
+    return row + (col>0?1:0);
 }
 /* ---- ponte web: o kernel pede, o JS busca de verdade e escreve o texto na
    RAM (mesmo mecanismo do toque e das imagens, que ja funcionam no celular).
@@ -288,10 +338,15 @@ static void browser_go(char *url, int *gmode, char *gq){
     }
     *gmode=0; gq[0]=0; web_fetch(url);                      /* site real da internet */
 }
+#define BCT 160          /* topo da area de conteudo (clip) */
+#define BCB 536          /* base da area de conteudo (clip) */
 void app_browser(void){
     static char url[160] = "duckduckgo.com"; static int ulen = 14; static int go = 0;
     static int gmode = 1; static char gq[80] = "";  /* 0=web/resultado  1=home */
     static int fresh = 1;  /* na home, a 1a tecla limpa a barra */
+    static int scroll = 0, total_rows = 0;
+    static int dragging = 0, last_y = 0, start_y = 0, moved = 0;
+    static u32 seen_req = 0;
     gfx_rect(0,0,SCRW,SCRH, 0x0B1220);
     ui_topbar("Navegador");
 
@@ -306,6 +361,9 @@ void app_browser(void){
 
     if(gmode == 1){ ddg_home(gq); goto osk; }
 
+    /* nova navegacao -> volta a rolagem pro topo */
+    if(web_hdr[0] != seen_req){ seen_req = web_hdr[0]; scroll = 0; }
+
     /* cabecalho: caixa de busca com o termo, ou a URL */
     if(gq[0]){ gfx_rect(8, 96, SCRW-16, 36, 0xFFFFFF); searchbox(12, 94, SCRW-24, gq, 0); }
     else gfx_text(12, 100, url, 0x6EE7B7, 1);
@@ -316,15 +374,45 @@ void app_browser(void){
     const char *st = loading ? "buscando..." : (ready ? (web_hdr[2]==1?"ok":"erro de rede") : "pronto");
     gfx_text(12, 138, st, (ready&&web_hdr[2]==2)?0xEF4444:0x6EE7B7, 1);
 
+    /* --- rolagem por arraste dentro da area de conteudo --- */
+    int in_area = ui_inside(8, 156, SCRW-16, 384);
+    if(g_ptr.down && (in_area || dragging)){
+        if(!dragging){ dragging = 1; last_y = start_y = g_ptr.y; moved = 0; }
+        else { scroll -= (g_ptr.y - last_y); last_y = g_ptr.y;
+               if(g_ptr.y-start_y > 8 || start_y-g_ptr.y > 8) moved = 1; }
+    }
+    int maxscroll = total_rows*16 - (BCB-BCT); if(maxscroll < 0) maxscroll = 0;
+    if(scroll > maxscroll) scroll = maxscroll; if(scroll < 0) scroll = 0;
+
     /* conteudo: texto que o JS escreveu na RAM */
     gfx_round(8, 156, SCRW-16, 384, 8, 0x0E1626);
     if(ready && web_hdr[2]==1){
-        render_md(16, 166, 56, 23, web_text);
+        total_rows = render_md(16, 166, 56, BCT, BCB, scroll, web_text);
+        /* barra de rolagem */
+        if(maxscroll > 0){
+            int track = BCB-BCT, kh = track*(BCB-BCT)/(total_rows*16); if(kh<20) kh=20;
+            int ky = BCT + scroll*(track-kh)/maxscroll;
+            gfx_round(SCRW-12, ky, 4, kh, 2, 0x3B4252);
+        }
     } else if(ready && web_hdr[2]==2){
-        gfx_text(16, 168, "sem conexao (proxy fora ou sem internet)", 0xEF4444, 1);
+        total_rows = 0; gfx_text(16, 168, "sem conexao (proxy fora ou sem internet)", 0xEF4444, 1);
     } else if(loading){
-        gfx_text(16, 168, "buscando na internet...", 0x9AA0A6, 1);
+        total_rows = 0; gfx_text(16, 168, "buscando na internet...", 0x9AA0A6, 1);
     }
+
+    /* --- toque num link (tap curto, nao arraste) -> abre o site --- */
+    if(g_ptr.clicked && !moved && in_area && ready){
+        for(int b=0; b<g_nbox; b++){
+            if(g_ptr.x >= g_box[b].x && g_ptr.x < g_box[b].x+g_box[b].w &&
+               g_ptr.y >= g_box[b].y && g_ptr.y < g_box[b].y+16){
+                const char *tg = g_url[g_box[b].u];
+                int n=0; for(; tg[n] && n<158; n++) url[n]=tg[n]; url[n]=0; ulen=n;
+                gmode=0; gq[0]=0; scroll=0; web_fetch(tg);
+                break;
+            }
+        }
+    }
+    if(!g_ptr.down) dragging = 0;
 
     /* teclado para digitar a URL */
 osk:;
