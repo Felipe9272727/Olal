@@ -12,6 +12,7 @@ void gfx_init(u32 lfb){ FB = (u32*)lfb; }
 u32 gfx_lighten(u32 c, int amt){
     int r = ((c>>16)&0xFF)+amt, g = ((c>>8)&0xFF)+amt, b = (c&0xFF)+amt;
     if(r>255)r=255; if(g>255)g=255; if(b>255)b=255;
+    if(r<0)r=0; if(g<0)g=0; if(b<0)b=0;
     return (r<<16)|(g<<8)|b;
 }
 

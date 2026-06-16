@@ -40,14 +40,15 @@ static App apps[] = {
     {"Rede",    0x0EA5E9, "@"},
     {"Navegador",0xF97316, "W"},
     {"Olal JS",  0xFACC15, "JS"},
+    {"YouTube",  0xFF0000, "YT"},
 };
 #define NAPPS (int)(sizeof(apps)/sizeof(apps[0]))
 
 #define GRID_X 28
-#define GRID_Y 150
+#define GRID_Y 140
 #define ICON   88
 #define STEPX  112
-#define STEPY  150
+#define STEPY  138
 
 static void draw_status(void){
     char t[8]; rtc_time(t);
@@ -98,6 +99,7 @@ static void draw_app(void){
         case 10: app_rede();    break;
         case 11: app_browser(); break;
         case 12: app_js();      break;
+        case 13: app_youtube(); break;
         default: g_screen = -1; break;
     }
 }

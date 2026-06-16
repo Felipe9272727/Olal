@@ -200,8 +200,95 @@ static void render_html(int x, int y, int maxcols, int maxrows, const char *t){
         if(col >= maxcols){ col = 0; row++; }
     }
 }
+/* ---- Google forjado: temos poder absoluto sobre o que o navegador mostra ---- */
+static int has_dot(const char *s){ for(int i=0;s[i];i++) if(s[i]=='.') return 1; return 0; }
+/* procura 'needle' (minusculo) como substring case-insensitive em 'hay' */
+static int ci_find(const char *hay, const char *needle){
+    for(int i=0; hay[i]; i++){
+        int j=0; while(needle[j]){ char x=hay[i+j]; if(x>='A'&&x<='Z') x+=32; if(x!=needle[j]) break; j++; }
+        if(!needle[j]) return 1;
+    }
+    return 0;
+}
+/* logo "Google" com as cores reais, centrado em cx */
+static void google_logo(int cx, int y, int s){
+    static const char *L = "Google";
+    static const u32 C[6] = {0x4285F4,0xEA4335,0xFBBC05,0x4285F4,0x34A853,0xEA4335};
+    int x = cx - (6*8*s)/2;
+    for(int i=0;i<6;i++){ gfx_char(x, y, L[i], C[i], s); x += 8*s; }
+}
+/* desenha uma lupa simples */
+static void google_lens(int cx, int cy, u32 col){
+    gfx_circle(cx, cy, 6, col); gfx_circle(cx, cy, 4, 0xFFFFFF);
+    for(int i=0;i<6;i++) gfx_pixel(cx+5+i, cy+5+i, col);
+}
+static void google_searchbox(int x, int y, int w, const char *txt, int cursor){
+    gfx_round(x, y, w, 40, 20, 0xDFE1E5);          /* borda cinza */
+    gfx_round(x+1, y+1, w-2, 38, 19, 0xFFFFFF);    /* interior branco */
+    google_lens(x+22, y+20, 0x9AA0A6);
+    char b[60]; int k=0; for(int i=0; txt[i] && k<54; i++) b[k++]=txt[i];
+    if(cursor) b[k++]='_'; b[k]=0;
+    gfx_text(x+42, y+12, b, 0x202124, 2);
+}
+static void google_home(const char *q){
+    gfx_rect(8, 110, SCRW-16, 600, 0xFFFFFF);
+    google_logo(SCRW/2, 200, 7);
+    google_searchbox(36, 300, SCRW-72, q, 1);
+    /* botoes */
+    gfx_round(60, 372, 160, 40, 6, 0xF8F9FA);
+    gfx_text_center(140, 384, "Pesquisa Google", 0x3C4043, 1);
+    gfx_round(260, 372, 160, 40, 6, 0xF8F9FA);
+    gfx_text_center(340, 384, "Estou com sorte", 0x3C4043, 1);
+    gfx_text_center(SCRW/2, 440, "Pesquise no Olal OS com poder absoluto", 0x70757A, 1);
+}
+static void google_results(const char *q){
+    gfx_rect(8, 110, SCRW-16, 600, 0xFFFFFF);
+    google_logo(64, 124, 3);
+    google_searchbox(20, 174, SCRW-40, q, 1);
+    char head[80]; int k=0; const char *p="Aprox. 4.380.000 resultados";
+    for(int i=0;p[i];i++) head[k++]=p[i]; head[k]=0;
+    gfx_text(20, 226, head, 0x70757A, 1);
+    /* tres dominios de resultado, com o termo no titulo */
+    static const char *dom[3] = {"pt.wikipedia.org > wiki", "olal.os > docs", "github.com > olal"};
+    static const char *suf[3] = {" - Wikipedia", " | Olal OS", " no GitHub"};
+    static const char *snp[3] = {
+        "Artigo enciclopedico sobre o tema, com historia,",
+        "Documentacao oficial do Olal OS. Saiba como rodar",
+        "Codigo aberto e exemplos da comunidade Olal sobre"};
+    int y = 252;
+    for(int r=0;r<3;r++){
+        gfx_text(20, y, dom[r], 0x006621, 1);
+        char ti[90]; int t=0; for(int i=0;q[i]&&t<40;i++) ti[t++]=q[i];
+        for(int i=0;suf[r][i]&&t<86;i++) ti[t++]=suf[r][i]; ti[t]=0;
+        gfx_text(20, y+18, ti, 0x1A0DAB, 2);
+        gfx_text(20, y+44, snp[r], 0x4D5156, 1);
+        char sn2[90]; int s2=0; const char*pre="\""; for(int i=0;pre[i];i++)sn2[s2++]=pre[i];
+        for(int i=0;q[i]&&s2<60;i++) sn2[s2++]=q[i];
+        const char*post="\" em detalhes."; for(int i=0;post[i];i++)sn2[s2++]=post[i]; sn2[s2]=0;
+        gfx_text(20, y+62, sn2, 0x4D5156, 1);
+        y += 104;
+    }
+}
+/* decide o que abrir: Google home, resultados Google, ou site real */
+static void browser_go(char *url, int *gmode, char *gq){
+    for(int i=0; url[i]; i++){                          /* ...q=<termo> -> resultados */
+        if(url[i]=='q' && url[i+1]=='='){
+            int k=0; for(int j=i+2; url[j] && k<78; j++){ char ch=url[j]; if(ch=='&')break; if(ch=='+')ch=' '; gq[k++]=ch; }
+            gq[k]=0; *gmode = 2; return;
+        }
+    }
+    if(url[0]==0){ *gmode = 1; gq[0]=0; return; }       /* vazio -> home do Google */
+    if(!has_dot(url)){                                  /* termo simples -> resultados */
+        int k=0; for(int j=0; url[j] && k<78; j++) gq[k++]=url[j]; gq[k]=0;
+        *gmode = 2; return;
+    }
+    if(ci_find(url,"google")){ *gmode = 1; gq[0]=0; return; }  /* google.com -> home */
+    *gmode = 0; browse(url);                             /* site real da internet */
+}
 void app_browser(void){
-    static char url[160] = "example.com"; static int ulen = 11; static int go = 0;
+    static char url[160] = "google.com"; static int ulen = 10; static int go = 0;
+    static int gmode = 1; static char gq[80] = "";  /* 0=web 1=home 2=results */
+    static int fresh = 1;  /* no Google, a 1a tecla limpa a barra */
     gfx_rect(0,0,SCRW,SCRH, 0x0B1220);
     ui_topbar("Navegador");
 
@@ -210,7 +297,13 @@ void app_browser(void){
     char shown[64]; int s0 = ulen > 36 ? ulen-36 : 0, k=0;
     for(int i=s0; i<ulen; i++) shown[k++]=url[i]; shown[k++]='_'; shown[k]=0;
     gfx_text(16, 64, shown, 0xE5E7EB, 1);
-    if(ui_button(SCRW-78, 56, 70, 36, "Ir", 0x2563EB, 0xFFFFFF, 2)){ url[ulen]=0; browse(url); go=1; }
+    if(ui_button(SCRW-78, 56, 70, 36, "Ir", 0x2563EB, 0xFFFFFF, 2)){
+        url[ulen]=0; browser_go(url, &gmode, gq); if(gmode==1) fresh=1; go=1;
+    }
+
+    /* roteamento Google forjado */
+    if(gmode == 1){ google_home(gq); goto osk; }
+    if(gmode == 2){ google_results(gq); goto osk; }
 
     /* status */
     const char *st = http_phase==0?"pronto" : http_phase==1?"resolvendo DNS..." :
@@ -252,10 +345,14 @@ void app_browser(void){
     }
 
     /* teclado para digitar a URL */
+osk:;
     char c = osk_render(560);
-    if(c == '\n'){ url[ulen]=0; browse(url); }
-    else if(c == 8){ if(ulen>0) ulen--; }
-    else if(c && ulen < 158) url[ulen++] = c;
+    if(c == '\n'){ url[ulen]=0; browser_go(url, &gmode, gq); if(gmode==1) fresh=1; }
+    else if(c == 8){ if(gmode==1 && fresh){ ulen=0; fresh=0; } if(ulen>0) ulen--; }
+    else if(c && ulen < 158){
+        if(gmode==1 && fresh){ ulen=0; fresh=0; }  /* comecou a digitar no Google */
+        url[ulen++] = c;
+    }
     (void)go;
 }
 
@@ -298,6 +395,83 @@ void app_rede(void){
     gfx_text(20, 320, "pilha de rede do zero no kernel:", 0x94A3B8, 1);
     gfx_text(20, 340, "NE2000 + Ethernet + ARP + IP + UDP", 0x6EE7B7, 1);
     gfx_text(20, 360, "+ DHCP. (no navegador precisa de relay)", 0x6EE7B7, 1);
+}
+
+/* ================= YouTube (mock, a cara do YouTube) ================= */
+static int yt_playing = -1;
+static const char *yt_title[] = {
+    "Criei um SISTEMA OPERACIONAL do ZERO",
+    "JavaScript explicado em 100 segundos",
+    "Eu construi minha PROPRIA CPU do nada",
+    "Lofi beats para programar de madrugada",
+    "A historia do Linux em 10 minutos",
+};
+static const char *yt_chan[] = {"Olal Dev","Fireship","Codigo Fonte","Lofi Coder","Tech Historia"};
+static const char *yt_views[] = {"1,2 mi de visualizacoes","890 mil","2,4 mi de visualizacoes","45 mi de visualizacoes","700 mil"};
+static const char *yt_dur[] = {"18:42","1:43","24:10","3:00:00","11:27"};
+static const u32 yt_col[] = {0x1E3A8A,0xB45309,0x166534,0x6D28D9,0x9A3412};
+
+static void play_tri(int cx, int cy, int r, u32 col){
+    for(int dy=-r; dy<=r; dy++){ int aw=r-(dy<0?-dy:dy); for(int dx=0;dx<aw;dx++) gfx_pixel(cx-r/3+dx, cy+dy, col); }
+}
+static void yt_thumb(int x, int y, int w, int h, int i){
+    gfx_vgrad(x, y, w, h, yt_col[i], gfx_lighten(yt_col[i], -50));
+    gfx_circle(x+w/2, y+h/2, 22, 0x222222);
+    gfx_circle(x+w/2, y+h/2, 21, 0x101010);
+    play_tri(x+w/2+2, y+h/2, 11, 0xFFFFFF);
+    /* badge de duracao */
+    int bw = gfx_textw(yt_dur[i],1)+8;
+    gfx_round(x+w-bw-6, y+h-20, bw, 15, 3, 0x000000);
+    gfx_text(x+w-bw-2, y+h-18, yt_dur[i], 0xFFFFFF, 1);
+}
+static void yt_topbar(void){
+    gfx_rect(0,0,SCRW,46, 0x0F0F0F);
+    if(yt_playing>=0){ if(ui_button(2,8,38,30,"<",0x0F0F0F,0xFFFFFF,2)) yt_playing=-1; }
+    else { if(ui_button(2,8,38,30,"<",0x0F0F0F,0x2BD17A,2)) g_screen=-1; }
+    /* logo: triangulo vermelho + YouTube */
+    gfx_round(46,13,26,20,5,0xFF0000); play_tri(60,23,7,0xFFFFFF);
+    gfx_text(80,15,"YouTube", 0xFFFFFF, 2);
+    /* lupa de busca */
+    gfx_circle(SCRW-58,23,7,0xAAAAAA); gfx_circle(SCRW-58,23,5,0x0F0F0F);
+    gfx_rect(SCRW-52,28,6,3,0xAAAAAA);
+    gfx_circle(SCRW-22,23,12,0x3B82F6); gfx_text(SCRW-29,16,"O",0xFFFFFF,2);
+}
+void app_youtube(void){
+    gfx_rect(0,0,SCRW,SCRH, 0x0F0F0F);
+    yt_topbar();
+    if(yt_playing < 0){
+        /* feed */
+        for(int i=0;i<3;i++){
+            int cy = 50 + i*188;
+            yt_thumb(8, cy, SCRW-16, 130, i);
+            if(ui_hit(8, cy, SCRW-16, 130)) yt_playing = i;
+            gfx_circle(24, cy+150, 16, gfx_lighten(yt_col[i],30));
+            gfx_text(48, cy+138, yt_title[i], 0xFFFFFF, 1);
+            char meta[80]; int k=0; const char*c=yt_chan[i]; for(int j=0;c[j];j++)meta[k++]=c[j];
+            meta[k++]=' ';meta[k++]='-';meta[k++]=' '; const char*v=yt_views[i]; for(int j=0;v[j];j++)meta[k++]=v[j]; meta[k]=0;
+            gfx_text(48, cy+158, meta, 0xAAAAAA, 1);
+        }
+    } else {
+        int i = yt_playing;
+        /* player */
+        yt_thumb(0, 46, SCRW, 250, i);
+        wrapped(12, 306, 28, yt_title[i], 0xFFFFFF, 2);
+        char vd[90]; int k=0; const char*v=yt_views[i]; for(int j=0;v[j];j++)vd[k++]=v[j];
+        const char*hd=" - ha 2 dias"; for(int j=0;hd[j];j++)vd[k++]=hd[j]; vd[k]=0;
+        gfx_text(12, 374, vd, 0xAAAAAA, 1);
+        /* canal + inscrever */
+        gfx_circle(26, 410, 15, gfx_lighten(yt_col[i],30));
+        gfx_text(50, 398, yt_chan[i], 0xFFFFFF, 1);
+        gfx_text(50, 416, "1,4 mi de inscritos", 0xAAAAAA, 1);
+        ui_button(SCRW-130, 396, 118, 34, "Inscrever-se", 0xFF0000, 0xFFFFFF, 1);
+        /* acoes */
+        const char *acts[] = {"Gostei","Nao","Compart","Salvar"};
+        for(int a=0;a<4;a++){ int x=12+a*116; gfx_round(x,452,108,40,20,0x272727);
+            gfx_text_center(x+54, 464, acts[a], 0xFFFFFF, 1); }
+        gfx_round(12, 504, SCRW-24, 56, 12, 0x272727);
+        gfx_text(24, 514, "Comentarios  2.341", 0xFFFFFF, 1);
+        gfx_text(24, 536, "Otimo video! O Olal e incrivel", 0xAAAAAA, 1);
+    }
 }
 
 /* ================= Olal JS (motor de JavaScript) ================= */
