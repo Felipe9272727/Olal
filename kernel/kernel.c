@@ -39,6 +39,7 @@ static App apps[] = {
     {"Sistema", 0x10B981, "S"},
     {"Rede",    0x0EA5E9, "@"},
     {"Navegador",0xF97316, "W"},
+    {"Olal JS",  0xFACC15, "JS"},
 };
 #define NAPPS (int)(sizeof(apps)/sizeof(apps[0]))
 
@@ -96,6 +97,7 @@ static void draw_app(void){
         case 9: app_sistema();  break;
         case 10: app_rede();    break;
         case 11: app_browser(); break;
+        case 12: app_js();      break;
         default: g_screen = -1; break;
     }
 }

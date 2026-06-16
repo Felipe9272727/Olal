@@ -300,6 +300,37 @@ void app_rede(void){
     gfx_text(20, 360, "+ DHCP. (no navegador precisa de relay)", 0x6EE7B7, 1);
 }
 
+/* ================= Olal JS (motor de JavaScript) ================= */
+void app_js(void){
+    static char code[700] =
+        "var s = \"Olal\";\n"
+        "print(s + \" roda JavaScript!\");\n"
+        "function fib(n){ if(n<2) return n; return fib(n-1)+fib(n-2); }\n"
+        "for(var i=0;i<10;i=i+1) print(fib(i));";
+    static int clen = -1; static char outp[1200] = "(toque em Rodar)";
+    if(clen < 0) clen = strlen(code);
+    gfx_vgrad(0,0,SCRW,SCRH, 0x1A1A2E, 0x05070C);
+    ui_topbar("Olal JS");
+
+    gfx_text(14, 56, "codigo JavaScript:", 0xA78BFA, 1);
+    gfx_round(8, 74, SCRW-16, 180, 8, 0x12122A);
+    code[clen] = 0;
+    wrapped(16, 84, 56, code, 0xE5E7EB, 1);
+
+    if(ui_button(8, 262, 120, 34, "Rodar", 0x2BD17A, 0x06281A, 2)){
+        js_run(code, outp, sizeof(outp));
+    }
+    if(ui_button(140, 262, 120, 34, "limpar", 0x374151, 0xFFFFFF, 1)){ clen = 0; code[0]=0; }
+
+    gfx_text(14, 308, "saida:", 0x6EE7B7, 1);
+    gfx_round(8, 326, SCRW-16, 210, 8, 0x06140E);
+    wrapped(16, 336, 56, outp, 0x6EE7B7, 1);
+
+    char c = osk_render(560);
+    if(c == 8){ if(clen>0) clen--; }
+    else if(c && clen < (int)sizeof(code)-2) code[clen++] = c;
+}
+
 /* ================= Sistema (multitarefa) ================= */
 void app_sistema(void){
     gfx_vgrad(0,0,SCRW,SCRH, 0x0B1F1A, 0x05070C);

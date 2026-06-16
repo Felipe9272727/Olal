@@ -94,6 +94,10 @@ void browse(const char *url);
 extern char http_buf[]; extern int http_len, http_phase;
 void app_rede(void);
 void app_browser(void);
+void app_js(void);
+
+/* ----- motor de JavaScript ----- */
+void js_run(const char *code, char *out, int max);
 
 /* ----- memoria dinamica (heap) ----- */
 void  heap_init(void);

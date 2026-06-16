@@ -9,7 +9,7 @@
 
 KERNEL_PHYS   equ 0x10000        ; endereco fisico do kernel
 KERNEL_SEG    equ 0x1000         ; = KERNEL_PHYS / 16
-LOAD_SECTORS  equ 760        ; cobre o kernel maior (IA + OLA-32)
+LOAD_SECTORS  equ 860        ; cobre o kernel maior (com motor JS)
 SPT           equ 18             ; setores por trilha (disquete 1.44MB)
 HEADS         equ 2
 
