@@ -63,6 +63,81 @@ try {
     setStatus("erro ao iniciar: " + err.message, false);
 }
 
+/* ---------- GATEWAY DE REDE NO NAVEGADOR ----------
+   O kernel faz TODA a sua pilha de rede (NE2000, ARP, IP, DHCP, DNS, TCP, HTTP).
+   O navegador nao pode abrir socket cru, entao este JS faz o papel do
+   "modem/roteador": responde DHCP/ARP/DNS, termina o TCP do kernel e busca a
+   pagina de verdade com fetch() via um proxy CORS (que tambem faz o HTTPS). */
+(function installNet(){
+    if(!emulator) return;
+    const SRVMAC=[0x52,0x55,0x0a,0,2,2], CLIENT=[10,0,2,15], GWIP=[10,0,2,2], WEBIP=[10,0,2,3];
+    let KMAC=[0,0,0,0,0,0];
+    const PROXIES = [u=>"https://api.allorigins.win/raw?url="+encodeURIComponent(u),
+                     u=>"https://corsproxy.io/?url="+encodeURIComponent(u)];
+    const chk=(b,o,l)=>{let s=0;for(let i=0;i<l;i+=2)s+=(b[o+i]<<8)|(b[o+i+1]||0);while(s>>16)s=(s&0xFFFF)+(s>>16);return(~s)&0xFFFF;};
+    const snd=f=>emulator.bus.send("net0-receive",new Uint8Array(f));
+    const eth=(d,s,t)=>[...d,...s,t>>8,t&255];
+    function ip(src,dst,p,pl){let h=[0x45,0,0,0,0,0,0,0,64,p,0,0,...src,...dst];const t=20+pl.length;h[2]=t>>8;h[3]=t&255;const c=chk(h,0,20);h[10]=c>>8;h[11]=c&255;return[...h,...pl];}
+    const udp=(src,dst,sp,dp,pl)=>ip(src,dst,17,[sp>>8,sp&255,dp>>8,dp&255,(8+pl.length)>>8,(8+pl.length)&255,0,0,...pl]);
+    function tcp(src,dst,sp,dp,seq,ack,fl,d){let t=[sp>>8,sp&255,dp>>8,dp&255,seq>>>24&255,seq>>>16&255,seq>>>8&255,seq&255,ack>>>24&255,ack>>>16&255,ack>>>8&255,ack&255,0x50,fl,0x20,0,0,0,0,0,...d];let s=0;const ph=[...src,...dst,0,6,(t.length>>8)&255,t.length&255];for(let i=0;i<ph.length;i+=2)s+=(ph[i]<<8)|(ph[i+1]||0);for(let i=0;i<t.length;i+=2)s+=(t[i]<<8)|(t[i+1]||0);while(s>>16)s=(s&0xFFFF)+(s>>16);s=(~s)&0xFFFF;t[16]=s>>8;t[17]=s&255;return ip(src,dst,6,t);}
+    const conns={};
+    async function fetchPage(host,path){
+        const target=(host.indexOf("http")===0?host:"https://"+host)+path;
+        console.log("[net] buscando "+target);
+        for(const mk of PROXIES){
+            try{ const ac=new AbortController(); const tm=setTimeout(()=>ac.abort(),9000);
+                 const r=await fetch(mk(target),{redirect:"follow",signal:ac.signal}); clearTimeout(tm);
+                 let body=await r.text(); console.log("[net] recebeu "+body.length+" bytes");
+                 if(body) return body.slice(0,20000); }catch(e){ console.log("[net] proxy falhou: "+e); }
+        }
+        return "<h1>Sem internet</h1><p>O navegador nao alcancou a rede (proxy fora ou sem conexao). A pilha do kernel funcionou ate aqui.</p>";
+    }
+    function streamResponse(c,sp,dp,body){
+        const head="HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: "+body.length+"\r\n\r\n";
+        const all=head+body; const bytes=[]; for(let i=0;i<all.length;i++) bytes.push(all.charCodeAt(i)&255);
+        for(let i=0;i<bytes.length;i+=256){ const ch=bytes.slice(i,i+256);
+            snd(eth(KMAC,SRVMAC,0x0800).concat(tcp(WEBIP,CLIENT,80,sp,c.nseq,c.kack,0x18,ch))); c.nseq=(c.nseq+ch.length)>>>0; }
+        snd(eth(KMAC,SRVMAC,0x0800).concat(tcp(WEBIP,CLIENT,80,sp,c.nseq,c.kack,0x11,[]))); c.nseq=(c.nseq+1)>>>0; /* FIN */
+    }
+    emulator.add_listener("net0-send", fr => {
+        const f=new Uint8Array(fr); KMAC=[...f.slice(6,12)]; const ty=(f[12]<<8)|f[13];
+        if(ty===0x0806){ const tip=[...f.slice(38,42)]; if(tip.join('.')===GWIP.join('.'))
+            snd(eth(KMAC,SRVMAC,0x0806).concat([0,1,8,0,6,4,0,2,...SRVMAC,...GWIP,...KMAC,...f.slice(28,32)])); return; }
+        if(ty!==0x0800) return;
+        const ihl=(f[14]&0xF)*4, off=14+ihl, proto=f[23];
+        if(proto===17){ const sp=(f[off]<<8)|f[off+1], dp=(f[off+2]<<8)|f[off+3];
+            if(dp===67){ let o=off+8,t=0;while(o<f.length&&f[o]!==255){const op=f[o++],l=f[o++];if(op===53)t=f[o];o+=l;}
+                const xid=[...f.slice(off+12,off+16)]; let d=new Array(240).fill(0); d[0]=2;d[1]=1;d[2]=6;
+                d[4]=xid[0];d[5]=xid[1];d[6]=xid[2];d[7]=xid[3]; d[16]=10;d[17]=0;d[18]=2;d[19]=15;
+                for(let i=0;i<6;i++)d[28+i]=KMAC[i]; d[236]=0x63;d[237]=0x82;d[238]=0x53;d[239]=0x63;
+                d.push(53,1,(t===1?2:5),54,4,...GWIP,51,4,0,0,0xa8,0xc0,1,4,255,255,255,0,3,4,...GWIP,6,4,...GWIP,255);
+                snd(eth(KMAC,SRVMAC,0x0800).concat(udp(GWIP,[255,255,255,255],67,68,d))); }
+            else if(dp===53){ const q=[...f.slice(off+8)]; let qe=12;while(q[qe])qe+=q[qe]+1;qe+=5;
+                const ans=[q[0],q[1],0x81,0x80,0,1,0,1,0,0,0,0,...q.slice(12,qe),0xc0,0x0c,0,1,0,1,0,0,0,60,0,4,...WEBIP];
+                const sp=(f[off]<<8)|f[off+1]; snd(eth(KMAC,SRVMAC,0x0800).concat(udp(GWIP,CLIENT,53,sp,ans))); }
+        } else if(proto===6){ const sp=(f[off]<<8)|f[off+1], dp=(f[off+2]<<8)|f[off+3];
+            const seq=(f[off+4]*16777216)+(f[off+5]<<16)+(f[off+6]<<8)+f[off+7];
+            const fl=f[off+13], doff=(f[off+12]>>4)*4, iptot=(f[16]<<8)|f[17], dlen=iptot-ihl-doff;
+            if(fl&0x02){ conns[sp]={nseq:5000,kack:(seq+1)>>>0,host:"",path:"/"};
+                snd(eth(KMAC,SRVMAC,0x0800).concat(tcp(WEBIP,CLIENT,80,sp,conns[sp].nseq,conns[sp].kack,0x12,[]))); conns[sp].nseq=5001; }
+            else if(conns[sp]){ const c=conns[sp];
+                if(dlen>0){ c.kack=(seq+dlen)>>>0;
+                    let req=""; for(let i=0;i<dlen;i++) req+=String.fromCharCode(f[off+doff+i]);
+                    snd(eth(KMAC,SRVMAC,0x0800).concat(tcp(WEBIP,CLIENT,80,sp,c.nseq,c.kack,0x10,[])));
+                    if(!c.fetching){ c.fetching=1;
+                        const m=req.match(/^GET\s+(\S+)\s/), hm=req.match(/Host:\s*([^\r\n]+)/i);
+                        fetchPage(hm?hm[1].trim():"", m?m[1]:"/").then(b=>{ c.body=b; });
+                    }
+                    /* injeta a resposta SINCRONO numa retransmissao do GET (assim
+                       o v86 processa o frame; injecao assincrona nao funciona) */
+                    if(c.body !== undefined && !c.sent){ c.sent=1; streamResponse(c,sp,dp,c.body); }
+                }
+                if(fl&0x01){ delete conns[sp]; }
+            }
+        }
+    });
+})();
+
 /* ---------- TOUCH REAL: escreve a coordenada absoluta direto na RAM do
    kernel (mailbox em 0x5000). Tocou num ponto = aquele ponto, na hora. ---------- */
 const MB = 0x5000, MAGIC = 0x4F4C4131;
