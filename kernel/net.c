@@ -79,6 +79,9 @@ void ne2k_send(const u8 *frame, int len){
     ne_out(NE_TPSR, TXSTART);
     ne_out(NE_TBCR0, len & 0xFF); ne_out(NE_TBCR1, (len>>8)&0xFF);
     ne_out(NE_CR, 0x26);                       /* transmit + start */
+    /* espera o fim da transmissao (PTX/TXE) para nao atropelar o proximo TX */
+    for(int g = 0; g < 200000; g++) if(ne_in(NE_ISR) & 0x0A) break;
+    ne_out(NE_ISR, 0x0A);                       /* limpa PTX|TXE */
     net_tx++;
 }
 
@@ -111,6 +114,7 @@ int ne2k_poll(u8 *buf, int max){
     u8 nx = hdr[1];                            /* proxima pagina */
     u8 nb = (nx == RXSTART) ? RXSTOP - 1 : nx - 1;
     ne_out(NE_BNRY, nb);
+    ne_out(NE_ISR, 0x01);                      /* limpa PRX (pacote recebido) */
     net_rx++;
     return len;
 }
@@ -306,6 +310,8 @@ static struct { u32 dst; u16 sport, dport; u32 seq, ack; int state; } tcp;
 char http_buf[24000]; int http_len = 0; int http_phase = 0;
 /* http_phase: 0 idle, 1 dns, 2 conectando, 3 recebendo, 4 pronto, 5 erro */
 static char req_host[64], req_path[160];
+static char http_req[260]; static int http_req_len = 0;
+static u32 http_get_seq = 0, http_last_tick = 0;
 
 static void tcp_seg(u8 flags, const u8 *data, int dlen){
     u8 s[1600]; int n = 0;
@@ -327,7 +333,7 @@ static void tcp_seg(u8 flags, const u8 *data, int dlen){
 }
 
 static void http_get_send(void){
-    char r[260]; int n = 0;
+    char *r = http_req; int n = 0;
     const char *p1 = "GET ";
     for(int i=0;p1[i];i++) r[n++]=p1[i];
     for(int i=0;req_path[i];i++) r[n++]=req_path[i];
@@ -336,7 +342,10 @@ static void http_get_send(void){
     for(int i=0;req_host[i];i++) r[n++]=req_host[i];
     const char *p3 = "\r\nConnection: close\r\nUser-Agent: Olal\r\n\r\n";
     for(int i=0;p3[i];i++) r[n++]=p3[i];
-    tcp_seg(0x18, (u8*)r, n);          /* PSH|ACK */
+    http_req_len = n;
+    http_get_seq = tcp.seq;
+    http_last_tick = g_ticks;
+    tcp_seg(0x18, (u8*)http_req, n);   /* PSH|ACK */
     tcp.seq += n;
 }
 
@@ -358,6 +367,7 @@ static void tcp_input(const u8 *s, int len){
     }
     if(tcp.state >= 2){
         if(dlen > 0){
+            http_last_tick = g_ticks;  /* recebendo: pausa a retransmissao */
             for(int i=0;i<dlen && http_len < (int)sizeof(http_buf)-1; i++)
                 http_buf[http_len++] = s[doff+i];
             http_buf[http_len] = 0;
@@ -414,6 +424,20 @@ void browse(const char *url){
 /* ---------- DHCP retransmit / loop principal ---------- */
 void net_poll(void){
     if(!net_have_nic) return;
+    /* manutencao da placa: recupera de overflow do anel de RX e limpa ISR */
+    u8 isr = ne_in(NE_ISR);
+    if(isr & 0x10){                            /* OVW: anel de RX transbordou */
+        u8 was = ne_in(NE_CR);
+        ne_out(NE_CR, 0x21);                   /* stop */
+        ne_out(NE_RBCR0, 0); ne_out(NE_RBCR1, 0);
+        ne_out(NE_TCR, 0x02);                  /* loopback durante o reset */
+        ne_out(NE_CR, 0x22);                   /* start */
+        ne_out(NE_BNRY, RXSTART);
+        ne_out(NE_CR, 0x61); ne_out(0x07, RXSTART + 1); ne_out(NE_CR, 0x21);
+        ne_out(NE_ISR, 0x10);                  /* limpa OVW */
+        ne_out(NE_TCR, 0x00);
+        (void)was;
+    }
     static u8 buf[1600];
     for(int k = 0; k < 12; k++){
         int len = ne2k_poll(buf, sizeof(buf));
@@ -474,6 +498,14 @@ void net_poll(void){
         if(net_gw_known){ tcp_connect(dns_result, 80); http_phase = 2; }
     }
     if(http_phase == 1 && dns_state == 3) http_phase = 5;   /* dns falhou */
+    /* retransmite o GET enquanto espera a resposta (o gateway injeta a
+       pagina em cima de uma retransmissao, de forma sincrona) */
+    if(http_phase == 3 && http_req_len && (g_ticks - http_last_tick) > 100){
+        u32 s = tcp.seq; tcp.seq = http_get_seq;
+        tcp_seg(0x18, (u8*)http_req, http_req_len);
+        tcp.seq = s;
+        http_last_tick = g_ticks;
+    }
 }
 
 void net_init(void){
