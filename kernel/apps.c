@@ -237,7 +237,8 @@ static void render_md(int x, int y, int maxcols, int maxrows, const char *t){
                 col++; if(col>=maxcols){ col=0; row++; }
             }
             if(t[i]==']') i++;
-            if(t[i]=='('){ i++; while(t[i] && t[i]!=')') i++; if(t[i]==')') i++; }
+            if(t[i]=='('){ int depth=1; i++;        /* pula (url), respeitando parenteses aninhados */
+                while(t[i] && depth){ if(t[i]=='(') depth++; else if(t[i]==')') depth--; i++; } }
             i--; sp=0; continue;
         }
         if(c=='*'||c=='#'||c=='`'||c=='_'||c=='|') continue;  /* sintaxe md */
@@ -250,7 +251,19 @@ static void render_md(int x, int y, int maxcols, int maxrows, const char *t){
         col++; if(col>=maxcols){ col=0; row++; }
     }
 }
-/* monta a URL de busca do DuckDuckGo Lite e navega de verdade */
+/* ---- ponte web: o kernel pede, o JS busca de verdade e escreve o texto na
+   RAM (mesmo mecanismo do toque e das imagens, que ja funcionam no celular).
+   Layout em WBASE: [0]=req [1]=done [2]=status(1 ok/2 erro) [3]=len  +16 url  +512 texto */
+#define WBASE 0x1400000u
+static volatile u32 *const web_hdr  = (volatile u32*)WBASE;
+static char *const         web_url  = (char*)(WBASE+16);
+static char *const         web_text = (char*)(WBASE+512);
+static void web_fetch(const char *url){
+    int i=0; for(; url[i] && i<255; i++) web_url[i]=url[i]; web_url[i]=0;
+    web_hdr[2]=0;                       /* status pendente */
+    web_hdr[0] = web_hdr[0] + 1;        /* req++ dispara o fetch no JS */
+}
+/* monta a URL de busca do DuckDuckGo Lite e pede pela ponte */
 static void ddg_search(const char *term){
     char u[220]; int n=0;
     const char *pre="lite.duckduckgo.com/lite/?q=";
@@ -262,7 +275,7 @@ static void ddg_search(const char *term){
         else if((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='-'||c=='.'||c=='_') u[n++]=c;
         else { u[n++]='%'; u[n++]=hex[(c>>4)&15]; u[n++]=hex[c&15]; }
     }
-    u[n]=0; browse(u);
+    u[n]=0; web_fetch(u);
 }
 /* decide: home, busca real no DDG, ou abrir um site direto */
 static void browser_go(char *url, int *gmode, char *gq){
@@ -273,7 +286,7 @@ static void browser_go(char *url, int *gmode, char *gq){
         int k=0; for(int j=0; url[j] && k<78; j++) gq[k++]=url[j]; gq[k]=0;
         *gmode=0; ddg_search(gq); return;
     }
-    *gmode=0; gq[0]=0; browse(url);                         /* site real da internet */
+    *gmode=0; gq[0]=0; web_fetch(url);                      /* site real da internet */
 }
 void app_browser(void){
     static char url[160] = "duckduckgo.com"; static int ulen = 14; static int go = 0;
@@ -297,26 +310,20 @@ void app_browser(void){
     if(gq[0]){ gfx_rect(8, 96, SCRW-16, 36, 0xFFFFFF); searchbox(12, 94, SCRW-24, gq, 0); }
     else gfx_text(12, 100, url, 0x6EE7B7, 1);
 
-    /* status */
-    const char *st = http_phase==0?"pronto" : http_phase==1?"resolvendo DNS..." :
-                     http_phase==2?"conectando..." : http_phase==3?"baixando..." :
-                     http_phase==4?"ok" : "erro / sem rede";
-    gfx_text(12, 138, st, http_phase==5?0xEF4444:0x6EE7B7, 1);
+    /* estado da ponte web */
+    int loading = (web_hdr[0]!=0 && web_hdr[1]!=web_hdr[0]);
+    int ready   = (web_hdr[0]!=0 && web_hdr[1]==web_hdr[0]);
+    const char *st = loading ? "buscando..." : (ready ? (web_hdr[2]==1?"ok":"erro de rede") : "pronto");
+    gfx_text(12, 138, st, (ready&&web_hdr[2]==2)?0xEF4444:0x6EE7B7, 1);
 
-    /* conteudo: corpo da resposta (depois dos cabecalhos) */
+    /* conteudo: texto que o JS escreveu na RAM */
     gfx_round(8, 156, SCRW-16, 384, 8, 0x0E1626);
-    if(http_phase == 4 && http_len > 0){
-        const char *body = http_buf; int i = 0;
-        for(; http_buf[i]; i++)
-            if(http_buf[i]=='\n' && http_buf[i+1]=='\r' && http_buf[i+2]=='\n'){ body=http_buf+i+3; break; }
-            else if(http_buf[i]=='\n' && http_buf[i+1]=='\n'){ body=http_buf+i+2; break; }
-        render_md(16, 166, 56, 23, body);
-    } else if(http_phase == 5){
-        gfx_text(16, 168, "erro de rede (proxy fora?)", 0xEF4444, 1);
-    } else if(!net_have_nic){
-        gfx_text(16, 168, "sem placa de rede", 0xFBBF24, 1);
-    } else if(http_phase >= 1 && http_phase <= 3){
-        gfx_text(16, 168, "carregando...", 0x9AA0A6, 1);
+    if(ready && web_hdr[2]==1){
+        render_md(16, 166, 56, 23, web_text);
+    } else if(ready && web_hdr[2]==2){
+        gfx_text(16, 168, "sem conexao (proxy fora ou sem internet)", 0xEF4444, 1);
+    } else if(loading){
+        gfx_text(16, 168, "buscando na internet...", 0x9AA0A6, 1);
     }
 
     /* teclado para digitar a URL */
