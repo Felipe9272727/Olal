@@ -45,10 +45,10 @@ static App apps[] = {
 #define NAPPS (int)(sizeof(apps)/sizeof(apps[0]))
 
 #define GRID_X 28
-#define GRID_Y 150
+#define GRID_Y 140
 #define ICON   88
 #define STEPX  112
-#define STEPY  150
+#define STEPY  138
 
 static void draw_status(void){
     char t[8]; rtc_time(t);
