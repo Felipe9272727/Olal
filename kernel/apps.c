@@ -167,128 +167,118 @@ void app_paint(void){
 }
 
 /* ================= Navegador ================= */
-/* compara case-insensitive os primeiros n chars */
-static int ci_eq(const char *a, const char *b, int n){
-    for(int i=0;i<n;i++){ char x=a[i]; if(x>='A'&&x<='Z') x+=32; if(x!=b[i]) return 0; }
-    return 1;
-}
-/* renderiza HTML como texto: tira as tags e o conteudo de script/style */
-static void render_html(int x, int y, int maxcols, int maxrows, const char *t){
-    int cx = x, row = 0, col = 0, intag = 0, sp = 1;
-    for(int i = 0; t[i] && row < maxrows; i++){
-        char c = t[i];
-        if(c == '<'){
-            /* pula blocos <script>...</script> e <style>...</style> inteiros */
-            const char *close = 0; int cl = 0;
-            if(ci_eq(t+i+1, "script", 6)){ close = "</script"; cl = 8; }
-            else if(ci_eq(t+i+1, "style", 5)){ close = "</style"; cl = 7; }
-            if(close){
-                i++;
-                while(t[i] && !ci_eq(t+i, close, cl)) i++;
-                while(t[i] && t[i] != '>') i++;
-                sp = 1; continue;
-            }
-            intag = 1; continue;
-        }
-        if(c == '>'){ intag = 0; c = ' '; }
-        if(intag) continue;
-        if(c == '\n' || c == '\r' || c == '\t') c = ' ';
-        if(c == ' '){ if(sp) continue; sp = 1; } else sp = 0;
-        if(c == ' ' && col == 0) continue;
-        gfx_char(cx + col*8, y + row*16, c, 0xD1D5DB, 1);
-        col++;
-        if(col >= maxcols){ col = 0; row++; }
-    }
-}
-/* ---- Google forjado: temos poder absoluto sobre o que o navegador mostra ---- */
+/* ---- Navegador real: busca de verdade no DuckDuckGo ----
+   Google real precisa de JavaScript (a home e a busca nao funcionam sem JS e
+   bloqueiam proxies/bots), entao usamos o DuckDuckGo Lite, que e renderizado
+   no servidor (HTML puro) e devolve resultados REAIS. */
 static int has_dot(const char *s){ for(int i=0;s[i];i++) if(s[i]=='.') return 1; return 0; }
-/* procura 'needle' (minusculo) como substring case-insensitive em 'hay' */
-static int ci_find(const char *hay, const char *needle){
-    for(int i=0; hay[i]; i++){
-        int j=0; while(needle[j]){ char x=hay[i+j]; if(x>='A'&&x<='Z') x+=32; if(x!=needle[j]) break; j++; }
-        if(!needle[j]) return 1;
+static int eq_ci(const char *a, const char *b){
+    int i=0; for(; a[i] && b[i]; i++){
+        char x=a[i]; if(x>='A'&&x<='Z') x+=32;
+        char y=b[i]; if(y>='A'&&y<='Z') y+=32;
+        if(x!=y) return 0;
     }
-    return 0;
+    return a[i]==0 && b[i]==0;
 }
-/* logo "Google" com as cores reais, centrado em cx */
-static void google_logo(int cx, int y, int s){
-    static const char *L = "Google";
-    static const u32 C[6] = {0x4285F4,0xEA4335,0xFBBC05,0x4285F4,0x34A853,0xEA4335};
-    int x = cx - (6*8*s)/2;
-    for(int i=0;i<6;i++){ gfx_char(x, y, L[i], C[i], s); x += 8*s; }
-}
-/* desenha uma lupa simples */
-static void google_lens(int cx, int cy, u32 col){
+/* lupa simples */
+static void lens(int cx, int cy, u32 col){
     gfx_circle(cx, cy, 6, col); gfx_circle(cx, cy, 4, 0xFFFFFF);
     for(int i=0;i<6;i++) gfx_pixel(cx+5+i, cy+5+i, col);
 }
-static void google_searchbox(int x, int y, int w, const char *txt, int cursor){
-    gfx_round(x, y, w, 40, 20, 0xDFE1E5);          /* borda cinza */
-    gfx_round(x+1, y+1, w-2, 38, 19, 0xFFFFFF);    /* interior branco */
-    google_lens(x+22, y+20, 0x9AA0A6);
-    char b[60]; int k=0; for(int i=0; txt[i] && k<54; i++) b[k++]=txt[i];
+static void searchbox(int x, int y, int w, const char *txt, int cursor){
+    gfx_round(x, y, w, 40, 20, 0xDFE1E5);          /* borda */
+    gfx_round(x+1, y+1, w-2, 38, 19, 0xFFFFFF);    /* interior */
+    lens(x+22, y+20, 0x9AA0A6);
+    char b[60]; int k=0; int s0 = strlen(txt) > 50 ? strlen(txt)-50 : 0;
+    for(int i=s0; txt[i] && k<54; i++) b[k++]=txt[i];
     if(cursor) b[k++]='_'; b[k]=0;
     gfx_text(x+42, y+12, b, 0x202124, 2);
 }
-static void google_home(const char *q){
-    gfx_rect(8, 110, SCRW-16, 600, 0xFFFFFF);
-    google_logo(SCRW/2, 200, 7);
-    google_searchbox(36, 300, SCRW-72, q, 1);
-    /* botoes */
-    gfx_round(60, 372, 160, 40, 6, 0xF8F9FA);
-    gfx_text_center(140, 384, "Pesquisa Google", 0x3C4043, 1);
-    gfx_round(260, 372, 160, 40, 6, 0xF8F9FA);
-    gfx_text_center(340, 384, "Estou com sorte", 0x3C4043, 1);
-    gfx_text_center(SCRW/2, 440, "Pesquise no Olal OS com poder absoluto", 0x70757A, 1);
+/* logo DuckDuckGo (circulo laranja + marca) */
+static void ddg_logo(int x, int y, int s){
+    int r = 8*s/2 + 2;
+    gfx_circle(x+r, y+8*s/2, r, 0xDE5833);
+    gfx_circle(x+r+2, y+8*s/2-2, r/2, 0xFFFFFF);   /* "cabeca" do pato */
+    gfx_text(x+2*r+8, y, "DuckDuckGo", 0x202124, s);
 }
-static void google_results(const char *q){
+static void ddg_home(const char *q){
     gfx_rect(8, 110, SCRW-16, 600, 0xFFFFFF);
-    google_logo(64, 124, 3);
-    google_searchbox(20, 174, SCRW-40, q, 1);
-    char head[80]; int k=0; const char *p="Aprox. 4.380.000 resultados";
-    for(int i=0;p[i];i++) head[k++]=p[i]; head[k]=0;
-    gfx_text(20, 226, head, 0x70757A, 1);
-    /* tres dominios de resultado, com o termo no titulo */
-    static const char *dom[3] = {"pt.wikipedia.org > wiki", "olal.os > docs", "github.com > olal"};
-    static const char *suf[3] = {" - Wikipedia", " | Olal OS", " no GitHub"};
-    static const char *snp[3] = {
-        "Artigo enciclopedico sobre o tema, com historia,",
-        "Documentacao oficial do Olal OS. Saiba como rodar",
-        "Codigo aberto e exemplos da comunidade Olal sobre"};
-    int y = 252;
-    for(int r=0;r<3;r++){
-        gfx_text(20, y, dom[r], 0x006621, 1);
-        char ti[90]; int t=0; for(int i=0;q[i]&&t<40;i++) ti[t++]=q[i];
-        for(int i=0;suf[r][i]&&t<86;i++) ti[t++]=suf[r][i]; ti[t]=0;
-        gfx_text(20, y+18, ti, 0x1A0DAB, 2);
-        gfx_text(20, y+44, snp[r], 0x4D5156, 1);
-        char sn2[90]; int s2=0; const char*pre="\""; for(int i=0;pre[i];i++)sn2[s2++]=pre[i];
-        for(int i=0;q[i]&&s2<60;i++) sn2[s2++]=q[i];
-        const char*post="\" em detalhes."; for(int i=0;post[i];i++)sn2[s2++]=post[i]; sn2[s2]=0;
-        gfx_text(20, y+62, sn2, 0x4D5156, 1);
-        y += 104;
-    }
+    ddg_logo(70, 190, 3);
+    searchbox(36, 270, SCRW-72, q, 1);
+    gfx_round(150, 340, 180, 42, 8, 0xDE5833);
+    gfx_text_center(240, 352, "Pesquisar", 0xFFFFFF, 2);
+    gfx_text_center(SCRW/2, 410, "Busca real, sem rastreamento", 0x70757A, 1);
+    gfx_text_center(SCRW/2, 432, "digite e toque em Ir", 0x9AA0A6, 1);
 }
-/* decide o que abrir: Google home, resultados Google, ou site real */
-static void browser_go(char *url, int *gmode, char *gq){
-    for(int i=0; url[i]; i++){                          /* ...q=<termo> -> resultados */
-        if(url[i]=='q' && url[i+1]=='='){
-            int k=0; for(int j=i+2; url[j] && k<78; j++){ char ch=url[j]; if(ch=='&')break; if(ch=='+')ch=' '; gq[k++]=ch; }
-            gq[k]=0; *gmode = 2; return;
+/* renderiza markdown (saida do leitor r.jina.ai) como texto limpo:
+   [texto](url) -> mostra so o texto (em azul); pula imagens, *, #, ` */
+static void render_md(int x, int y, int maxcols, int maxrows, const char *t){
+    int row=0, col=0, sp=1;
+    /* pula o preambulo do leitor jina: "...Markdown Content:\n" */
+    for(int i=0; t[i]; i++){
+        if(t[i]=='M' && t[i+1]=='a' && t[i+2]=='r' && t[i+3]=='k' &&
+           t[i+4]=='d' && t[i+5]=='o' && t[i+6]=='w' && t[i+7]=='n' &&
+           t[i+8]==' ' && t[i+9]=='C'){
+            int j=i+10; while(t[j] && t[j]!='\n') j++; if(t[j]=='\n') j++;
+            t = t+j; break;
         }
+        if(i>400) break;   /* preambulo e curto; nao varre demais */
     }
-    if(url[0]==0){ *gmode = 1; gq[0]=0; return; }       /* vazio -> home do Google */
-    if(!has_dot(url)){                                  /* termo simples -> resultados */
+    for(int i=0; t[i] && row<maxrows; i++){
+        char c = t[i];
+        if(c=='!' && t[i+1]=='['){ i++; continue; }     /* imagem ![..] -> ignora marca */
+        if(c=='['){
+            i++;
+            while(t[i] && t[i]!=']' && row<maxrows){
+                char d=t[i++]; if(d=='\n'||d=='\r'||d=='\t') d=' ';
+                if(d==' '){ if(sp) continue; sp=1; } else sp=0;
+                if((unsigned char)d<32 || (unsigned char)d>126) continue;
+                gfx_char(x+col*8, y+row*16, d, 0x6AB7FF, 1);
+                col++; if(col>=maxcols){ col=0; row++; }
+            }
+            if(t[i]==']') i++;
+            if(t[i]=='('){ i++; while(t[i] && t[i]!=')') i++; if(t[i]==')') i++; }
+            i--; sp=0; continue;
+        }
+        if(c=='*'||c=='#'||c=='`'||c=='_'||c=='|') continue;  /* sintaxe md */
+        if(c=='\n'){ if(col>0){ col=0; row++; } sp=1; continue; }
+        if(c=='\r'||c=='\t') c=' ';
+        if(c==' '){ if(sp) continue; sp=1; } else sp=0;
+        if(c==' ' && col==0) continue;
+        if((unsigned char)c<32 || (unsigned char)c>126) continue;
+        gfx_char(x+col*8, y+row*16, c, 0xD1D5DB, 1);
+        col++; if(col>=maxcols){ col=0; row++; }
+    }
+}
+/* monta a URL de busca do DuckDuckGo Lite e navega de verdade */
+static void ddg_search(const char *term){
+    char u[220]; int n=0;
+    const char *pre="lite.duckduckgo.com/lite/?q=";
+    for(int i=0;pre[i];i++) u[n++]=pre[i];
+    const char *hex="0123456789ABCDEF";
+    for(int i=0; term[i] && n<210; i++){
+        unsigned char c = (unsigned char)term[i];
+        if(c==' ') u[n++]='+';
+        else if((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='-'||c=='.'||c=='_') u[n++]=c;
+        else { u[n++]='%'; u[n++]=hex[(c>>4)&15]; u[n++]=hex[c&15]; }
+    }
+    u[n]=0; browse(u);
+}
+/* decide: home, busca real no DDG, ou abrir um site direto */
+static void browser_go(char *url, int *gmode, char *gq){
+    if(url[0]==0 || eq_ci(url,"google.com") || eq_ci(url,"www.google.com") ||
+       eq_ci(url,"google") || eq_ci(url,"duckduckgo.com") || eq_ci(url,"duckduckgo") ||
+       eq_ci(url,"ddg")){ *gmode=1; gq[0]=0; return; }     /* home do buscador */
+    if(!has_dot(url)){                                      /* termo -> busca real */
         int k=0; for(int j=0; url[j] && k<78; j++) gq[k++]=url[j]; gq[k]=0;
-        *gmode = 2; return;
+        *gmode=0; ddg_search(gq); return;
     }
-    if(ci_find(url,"google")){ *gmode = 1; gq[0]=0; return; }  /* google.com -> home */
-    *gmode = 0; browse(url);                             /* site real da internet */
+    *gmode=0; gq[0]=0; browse(url);                         /* site real da internet */
 }
 void app_browser(void){
-    static char url[160] = "google.com"; static int ulen = 10; static int go = 0;
-    static int gmode = 1; static char gq[80] = "";  /* 0=web 1=home 2=results */
-    static int fresh = 1;  /* no Google, a 1a tecla limpa a barra */
+    static char url[160] = "duckduckgo.com"; static int ulen = 14; static int go = 0;
+    static int gmode = 1; static char gq[80] = "";  /* 0=web/resultado  1=home */
+    static int fresh = 1;  /* na home, a 1a tecla limpa a barra */
     gfx_rect(0,0,SCRW,SCRH, 0x0B1220);
     ui_topbar("Navegador");
 
@@ -301,47 +291,32 @@ void app_browser(void){
         url[ulen]=0; browser_go(url, &gmode, gq); if(gmode==1) fresh=1; go=1;
     }
 
-    /* roteamento Google forjado */
-    if(gmode == 1){ google_home(gq); goto osk; }
-    if(gmode == 2){ google_results(gq); goto osk; }
+    if(gmode == 1){ ddg_home(gq); goto osk; }
+
+    /* cabecalho: caixa de busca com o termo, ou a URL */
+    if(gq[0]){ gfx_rect(8, 96, SCRW-16, 36, 0xFFFFFF); searchbox(12, 94, SCRW-24, gq, 0); }
+    else gfx_text(12, 100, url, 0x6EE7B7, 1);
 
     /* status */
     const char *st = http_phase==0?"pronto" : http_phase==1?"resolvendo DNS..." :
                      http_phase==2?"conectando..." : http_phase==3?"baixando..." :
                      http_phase==4?"ok" : "erro / sem rede";
-    gfx_text(12, 100, st, http_phase==5?0xEF4444:0x6EE7B7, 1);
+    gfx_text(12, 138, st, http_phase==5?0xEF4444:0x6EE7B7, 1);
 
     /* conteudo: corpo da resposta (depois dos cabecalhos) */
-    gfx_round(8, 120, SCRW-16, 420, 8, 0x0E1626);
+    gfx_round(8, 156, SCRW-16, 384, 8, 0x0E1626);
     if(http_phase == 4 && http_len > 0){
         const char *body = http_buf; int i = 0;
         for(; http_buf[i]; i++)
             if(http_buf[i]=='\n' && http_buf[i+1]=='\r' && http_buf[i+2]=='\n'){ body=http_buf+i+3; break; }
             else if(http_buf[i]=='\n' && http_buf[i+1]=='\n'){ body=http_buf+i+2; break; }
-        volatile u32 *stg = (volatile u32*)0x600000;
-        int nimg = (int)stg[1];
-        if(nimg < 0 || nimg > 12) nimg = 0;
-        render_html(16, 130, 56, nimg > 0 ? 10 : 25, body);
-        /* imagens decodificadas pelo JS do navegador e enviadas como pixels */
-        if(nimg > 0){
-            for(int k = 0; k < nimg; k++){
-                volatile u32 *h = (volatile u32*)(0x600010u + k*20);
-                int ix=(int)h[0], iy=(int)h[1], iw=(int)h[2], ih=(int)h[3]; u32 poff=h[4];
-                if(iw<=0 || ih<=0 || iw>480 || ih>800) continue;
-                volatile u8 *px = (volatile u8*)(0x601000u + poff);
-                for(int yy=0; yy<ih; yy++){
-                    int sy = iy+yy; if(sy<128 || sy>=540) continue;
-                    for(int xx=0; xx<iw; xx++){
-                        volatile u8 *p = px + ((u32)(yy*iw+xx))*3;
-                        gfx_pixel(ix+xx, sy, ((u32)p[0]<<16)|((u32)p[1]<<8)|p[2]);
-                    }
-                }
-            }
-        }
+        render_md(16, 166, 56, 23, body);
+    } else if(http_phase == 5){
+        gfx_text(16, 168, "erro de rede (proxy fora?)", 0xEF4444, 1);
     } else if(!net_have_nic){
-        gfx_text(16, 132, "sem placa de rede", 0xFBBF24, 1);
-    } else if(dhcp_state != 3){
-        gfx_text(16, 132, "obtendo IP (precisa de relay)...", 0xFBBF24, 1);
+        gfx_text(16, 168, "sem placa de rede", 0xFBBF24, 1);
+    } else if(http_phase >= 1 && http_phase <= 3){
+        gfx_text(16, 168, "carregando...", 0x9AA0A6, 1);
     }
 
     /* teclado para digitar a URL */
@@ -350,7 +325,7 @@ osk:;
     if(c == '\n'){ url[ulen]=0; browser_go(url, &gmode, gq); if(gmode==1) fresh=1; }
     else if(c == 8){ if(gmode==1 && fresh){ ulen=0; fresh=0; } if(ulen>0) ulen--; }
     else if(c && ulen < 158){
-        if(gmode==1 && fresh){ ulen=0; fresh=0; }  /* comecou a digitar no Google */
+        if(gmode==1 && fresh){ ulen=0; fresh=0; }  /* comecou a digitar na home */
         url[ulen++] = c;
     }
     (void)go;
