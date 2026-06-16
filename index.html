@@ -41,7 +41,7 @@ try {
         wasm_path: "lib/v86.wasm",
         bios:     { url: "lib/seabios.bin" },
         vga_bios: { url: "lib/vgabios.bin" },
-        fda:      { url: "olal.img?v=ddgreal" },
+        fda:      { url: "olal.img?v=ddgbridge" },
         net_device: { type: "ne2k" },   /* sem relay publico confiavel hoje (rede so com gateway proprio) */
         memory_size: 64 * 1024 * 1024,
         vga_memory_size: 16 * 1024 * 1024,
@@ -184,6 +184,50 @@ try {
             }
         }
     });
+})();
+
+/* ---------- PONTE WEB CONFIAVEL: o navegador do OS pede uma URL escrevendo
+   na RAM (WBASE), este JS busca de verdade via r.jina.ai e devolve o texto
+   limpo para a RAM. Mesmo mecanismo do toque/imagens, que ja funciona no
+   celular - sem depender da pilha TCP emulada. ---------- */
+(function installWeb(){
+    const WBASE = 0x1400000;
+    function wU32b(addr, v){ emulator.write_memory(new Uint8Array([v&255,(v>>>8)&255,(v>>>16)&255,(v>>>24)&255]), addr); }
+    function rU32(addr){ const b=emulator.read_memory(addr,4); return (b[0]|(b[1]<<8)|(b[2]<<16)|(b[3]<<24))>>>0; }
+    async function jget(url){
+        const target = url.indexOf("http")===0 ? url : "https://"+url;
+        const ac=new AbortController(); const tm=setTimeout(()=>ac.abort(),20000);
+        try{
+            const r=await fetch("https://r.jina.ai/"+target,{signal:ac.signal});
+            return await r.text();
+        } finally { clearTimeout(tm); }
+    }
+    let busy=false, last=0;
+    setInterval(async ()=>{
+        if(!emulator || busy) return;
+        let req, done;
+        try{ req=rU32(WBASE); done=rU32(WBASE+4); }catch(e){ return; }
+        if(req===0 || req===done || req===last) return;
+        last=req; busy=true;
+        let text="", status=1;
+        try{
+            const ub=emulator.read_memory(WBASE+16,256); let url="";
+            for(let i=0;i<256 && ub[i];i++) url+=String.fromCharCode(ub[i]);
+            console.log("[web] buscando "+url);
+            text=await jget(url);
+            console.log("[web] recebeu "+text.length+" bytes");
+        }catch(e){ status=2; text="erro: "+((e&&e.message)||e); console.log("[web] falhou: "+e); }
+        try{
+            const n=Math.min(text.length,23000);
+            const bytes=new Uint8Array(n+1);
+            for(let i=0;i<n;i++) bytes[i]=text.charCodeAt(i)&255; bytes[n]=0;
+            emulator.write_memory(bytes, WBASE+512);
+            wU32b(WBASE+12, n);
+            wU32b(WBASE+8, status);
+            wU32b(WBASE+4, req);             /* done = req: pronto */
+        }catch(e){ console.log("[web] erro ao escrever: "+e); }
+        busy=false;
+    }, 150);
 })();
 
 /* ---------- TOUCH REAL: escreve a coordenada absoluta direto na RAM do
