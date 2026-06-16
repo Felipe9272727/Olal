@@ -166,6 +166,63 @@ void app_paint(void){
     if(ui_button(SCRW-90, SCRH-58, 78, 48, "limpar", 0x374151, 0xFFFFFF, 1)) npts = 0;
 }
 
+/* ================= Navegador ================= */
+/* renderiza HTML como texto (tira as tags) numa area */
+static void render_html(int x, int y, int maxcols, int maxrows, const char *t){
+    int cx = x, row = 0, col = 0, intag = 0, sp = 1;
+    for(int i = 0; t[i] && row < maxrows; i++){
+        char c = t[i];
+        if(c == '<'){ intag = 1; continue; }
+        if(c == '>'){ intag = 0; c = ' '; }
+        if(intag) continue;
+        if(c == '\n' || c == '\r' || c == '\t') c = ' ';
+        if(c == ' '){ if(sp) continue; sp = 1; } else sp = 0;
+        if(c == ' ' && col == 0) continue;
+        gfx_char(cx + col*8, y + row*16, c, 0xD1D5DB, 1);
+        col++;
+        if(col >= maxcols){ col = 0; row++; }
+    }
+}
+void app_browser(void){
+    static char url[160] = "example.com"; static int ulen = 11; static int go = 0;
+    gfx_rect(0,0,SCRW,SCRH, 0x0B1220);
+    ui_topbar("Navegador");
+
+    /* barra de URL */
+    gfx_round(8, 56, SCRW-90, 36, 8, 0x1E293B);
+    char shown[64]; int s0 = ulen > 36 ? ulen-36 : 0, k=0;
+    for(int i=s0; i<ulen; i++) shown[k++]=url[i]; shown[k++]='_'; shown[k]=0;
+    gfx_text(16, 64, shown, 0xE5E7EB, 1);
+    if(ui_button(SCRW-78, 56, 70, 36, "Ir", 0x2563EB, 0xFFFFFF, 2)){ url[ulen]=0; browse(url); go=1; }
+
+    /* status */
+    const char *st = http_phase==0?"pronto" : http_phase==1?"resolvendo DNS..." :
+                     http_phase==2?"conectando..." : http_phase==3?"baixando..." :
+                     http_phase==4?"ok" : "erro / sem rede";
+    gfx_text(12, 100, st, http_phase==5?0xEF4444:0x6EE7B7, 1);
+
+    /* conteudo: corpo da resposta (depois dos cabecalhos) */
+    gfx_round(8, 120, SCRW-16, 420, 8, 0x0E1626);
+    if(http_phase == 4 && http_len > 0){
+        const char *body = http_buf; int i = 0;
+        for(; http_buf[i]; i++)
+            if(http_buf[i]=='\n' && http_buf[i+1]=='\r' && http_buf[i+2]=='\n'){ body=http_buf+i+3; break; }
+            else if(http_buf[i]=='\n' && http_buf[i+1]=='\n'){ body=http_buf+i+2; break; }
+        render_html(16, 130, 56, 25, body);
+    } else if(!net_have_nic){
+        gfx_text(16, 132, "sem placa de rede", 0xFBBF24, 1);
+    } else if(dhcp_state != 3){
+        gfx_text(16, 132, "obtendo IP (precisa de relay)...", 0xFBBF24, 1);
+    }
+
+    /* teclado para digitar a URL */
+    char c = osk_render(560);
+    if(c == '\n'){ url[ulen]=0; browse(url); }
+    else if(c == 8){ if(ulen>0) ulen--; }
+    else if(c && ulen < 158) url[ulen++] = c;
+    (void)go;
+}
+
 /* ================= Rede ================= */
 static void ip_str(u32 ip, char *out){
     char b[8]; int k = 0;
