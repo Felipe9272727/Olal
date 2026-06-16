@@ -92,6 +92,37 @@ try {
         }
         return "<h1>Sem internet</h1><p>O navegador nao alcancou a rede (proxy fora ou sem conexao). A pilha do kernel funcionou ate aqui.</p>";
     }
+    /* baixa as imagens da pagina, decodifica no navegador e manda os pixels
+       (RGB) para a RAM do kernel, que so desenha. O kernel nao precisa de
+       decodificador de JPEG/PNG: o navegador ja sabe abrir qualquer imagem. */
+    async function processImages(host, html){
+        try{
+            emulator.write_memory(new Uint8Array([0,0,0,0]), 0x600004);   /* zera contagem */
+            const re=/<img[^>]+src\s*=\s*["']?([^"'\s>]+)/gi; let m, srcs=[];
+            while((m=re.exec(html)) && srcs.length<6) srcs.push(m[1]);
+            let count=0, pixoff=0, y=300;
+            for(const src of srcs){
+                let u = src.indexOf("http")===0 ? src : src.indexOf("//")===0 ? "https:"+src
+                      : "https://"+host+(src[0]==="/"?"":"/")+src;
+                try{
+                    const r=await fetch(PROXIES[0](u)); const blob=await r.blob();
+                    const bmp=await createImageBitmap(blob);
+                    const sc=Math.min(440/bmp.width, 150/bmp.height, 1);
+                    const w=Math.max(1,Math.round(bmp.width*sc)), h=Math.max(1,Math.round(bmp.height*sc));
+                    if(y+h>538) break;
+                    const cv=new OffscreenCanvas(w,h); const cx=cv.getContext("2d"); cx.drawImage(bmp,0,0,w,h);
+                    const d=cx.getImageData(0,0,w,h).data;
+                    const rgb=new Uint8Array(w*h*3); for(let i=0,j=0;i<d.length;i+=4){rgb[j++]=d[i];rgb[j++]=d[i+1];rgb[j++]=d[i+2];}
+                    emulator.write_memory(rgb, 0x601000+pixoff);
+                    const hd=new ArrayBuffer(20); const dv=new DataView(hd);
+                    dv.setUint32(0,20,true);dv.setUint32(4,y,true);dv.setUint32(8,w,true);dv.setUint32(12,h,true);dv.setUint32(16,pixoff,true);
+                    emulator.write_memory(new Uint8Array(hd), 0x600010+count*20);
+                    pixoff+=w*h*3; y+=h+6; count++;
+                    emulator.write_memory(new Uint8Array(new Uint32Array([count]).buffer), 0x600004);
+                }catch(e){}
+            }
+        }catch(e){}
+    }
     function streamResponse(c,sp,dp,body){
         const head="HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: "+body.length+"\r\n\r\n";
         const all=head+body; const bytes=[]; for(let i=0;i<all.length;i++) bytes.push(all.charCodeAt(i)&255);
@@ -125,8 +156,10 @@ try {
                     let req=""; for(let i=0;i<dlen;i++) req+=String.fromCharCode(f[off+doff+i]);
                     snd(eth(KMAC,SRVMAC,0x0800).concat(tcp(WEBIP,CLIENT,80,sp,c.nseq,c.kack,0x10,[])));
                     if(!c.fetching){ c.fetching=1;
+                        emulator.write_memory(new Uint8Array([0,0,0,0]), 0x600004);  /* limpa imagens antigas */
                         const m=req.match(/^GET\s+(\S+)\s/), hm=req.match(/Host:\s*([^\r\n]+)/i);
-                        fetchPage(hm?hm[1].trim():"", m?m[1]:"/").then(b=>{ c.body=b; });
+                        const host=hm?hm[1].trim():"";
+                        fetchPage(host, m?m[1]:"/").then(b=>{ c.body=b; processImages(host, b); });
                     }
                     /* injeta a resposta SINCRONO numa retransmissao do GET (assim
                        o v86 processa o frame; injecao assincrona nao funciona) */

@@ -208,7 +208,25 @@ void app_browser(void){
         for(; http_buf[i]; i++)
             if(http_buf[i]=='\n' && http_buf[i+1]=='\r' && http_buf[i+2]=='\n'){ body=http_buf+i+3; break; }
             else if(http_buf[i]=='\n' && http_buf[i+1]=='\n'){ body=http_buf+i+2; break; }
-        render_html(16, 130, 56, 25, body);
+        render_html(16, 130, 56, 10, body);
+        /* imagens decodificadas pelo JS do navegador e enviadas como pixels */
+        volatile u32 *stg = (volatile u32*)0x600000;
+        int nimg = (int)stg[1];
+        if(nimg > 0 && nimg <= 12){
+            for(int k = 0; k < nimg; k++){
+                volatile u32 *h = (volatile u32*)(0x600010u + k*20);
+                int ix=(int)h[0], iy=(int)h[1], iw=(int)h[2], ih=(int)h[3]; u32 poff=h[4];
+                if(iw<=0 || ih<=0 || iw>480 || ih>800) continue;
+                volatile u8 *px = (volatile u8*)(0x601000u + poff);
+                for(int yy=0; yy<ih; yy++){
+                    int sy = iy+yy; if(sy<128 || sy>=540) continue;
+                    for(int xx=0; xx<iw; xx++){
+                        volatile u8 *p = px + ((u32)(yy*iw+xx))*3;
+                        gfx_pixel(ix+xx, sy, ((u32)p[0]<<16)|((u32)p[1]<<8)|p[2]);
+                    }
+                }
+            }
+        }
     } else if(!net_have_nic){
         gfx_text(16, 132, "sem placa de rede", 0xFBBF24, 1);
     } else if(dhcp_state != 3){
