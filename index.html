@@ -41,7 +41,7 @@ try {
         wasm_path: "lib/v86.wasm",
         bios:     { url: "lib/seabios.bin" },
         vga_bios: { url: "lib/vgabios.bin" },
-        fda:      { url: "olal.img?v=ytgoogle" },
+        fda:      { url: "olal.img?v=ddgreal" },
         net_device: { type: "ne2k" },   /* sem relay publico confiavel hoje (rede so com gateway proprio) */
         memory_size: 64 * 1024 * 1024,
         vga_memory_size: 16 * 1024 * 1024,
@@ -72,8 +72,11 @@ try {
     if(!emulator) return;
     const SRVMAC=[0x52,0x55,0x0a,0,2,2], CLIENT=[10,0,2,15], GWIP=[10,0,2,2], WEBIP=[10,0,2,3];
     let KMAC=[0,0,0,0,0,0];
-    const PROXIES = [u=>"https://api.allorigins.win/raw?url="+encodeURIComponent(u),
-                     u=>"https://corsproxy.io/?url="+encodeURIComponent(u)];
+    /* r.jina.ai: le a pagina de verdade, limpa pra texto/markdown e manda
+       cabecalho CORS (funciona no navegador). E o "modem" que nos faltava. */
+    const PROXIES = [u=>"https://r.jina.ai/"+u,
+                     u=>"https://api.allorigins.win/raw?url="+encodeURIComponent(u)];
+    const IMG_PROXIES = [u=>"https://api.allorigins.win/raw?url="+encodeURIComponent(u)];
     const chk=(b,o,l)=>{let s=0;for(let i=0;i<l;i+=2)s+=(b[o+i]<<8)|(b[o+i+1]||0);while(s>>16)s=(s&0xFFFF)+(s>>16);return(~s)&0xFFFF;};
     const snd=f=>emulator.bus.send("net0-receive",new Uint8Array(f));
     const eth=(d,s,t)=>[...d,...s,t>>8,t&255];
@@ -85,7 +88,7 @@ try {
         const target=(host.indexOf("http")===0?host:"https://"+host)+path;
         console.log("[net] buscando "+target);
         for(const mk of PROXIES){
-            try{ const ac=new AbortController(); const tm=setTimeout(()=>ac.abort(),9000);
+            try{ const ac=new AbortController(); const tm=setTimeout(()=>ac.abort(),20000);
                  const r=await fetch(mk(target),{redirect:"follow",signal:ac.signal}); clearTimeout(tm);
                  let body=await r.text(); console.log("[net] recebeu "+body.length+" bytes");
                  if(body){
@@ -104,8 +107,8 @@ try {
         if(s.indexOf("//")===0) return "https:"+s;
         return "https://"+host+(s[0]==="/"?"":"/")+s;
     }
-    async function fetchImg(u){                 /* tenta os dois proxies; decodifica qualquer formato */
-        for(const mk of PROXIES){
+    async function fetchImg(u){                 /* imagens: proxy que devolve bytes crus */
+        for(const mk of IMG_PROXIES){
             try{ const r=await fetch(mk(u)); const blob=await r.blob();
                  return await createImageBitmap(blob); }catch(e){}
         }
