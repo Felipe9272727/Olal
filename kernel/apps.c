@@ -167,49 +167,9 @@ void app_paint(void){
 }
 
 /* ================= Navegador ================= */
-/* ---- Navegador real: busca de verdade no DuckDuckGo ----
-   Google real precisa de JavaScript (a home e a busca nao funcionam sem JS e
-   bloqueiam proxies/bots), entao usamos o DuckDuckGo Lite, que e renderizado
-   no servidor (HTML puro) e devolve resultados REAIS. */
+/* ---- Navegador grafico: a pagina e renderizada num motor de verdade
+   (Chromium, via screenshot) e exibida como imagem; modo Texto opcional. ---- */
 static int has_dot(const char *s){ for(int i=0;s[i];i++) if(s[i]=='.') return 1; return 0; }
-static int eq_ci(const char *a, const char *b){
-    int i=0; for(; a[i] && b[i]; i++){
-        char x=a[i]; if(x>='A'&&x<='Z') x+=32;
-        char y=b[i]; if(y>='A'&&y<='Z') y+=32;
-        if(x!=y) return 0;
-    }
-    return a[i]==0 && b[i]==0;
-}
-/* lupa simples */
-static void lens(int cx, int cy, u32 col){
-    gfx_circle(cx, cy, 6, col); gfx_circle(cx, cy, 4, 0xFFFFFF);
-    for(int i=0;i<6;i++) gfx_pixel(cx+5+i, cy+5+i, col);
-}
-static void searchbox(int x, int y, int w, const char *txt, int cursor){
-    gfx_round(x, y, w, 40, 20, 0xDFE1E5);          /* borda */
-    gfx_round(x+1, y+1, w-2, 38, 19, 0xFFFFFF);    /* interior */
-    lens(x+22, y+20, 0x9AA0A6);
-    char b[60]; int k=0; int s0 = strlen(txt) > 50 ? strlen(txt)-50 : 0;
-    for(int i=s0; txt[i] && k<54; i++) b[k++]=txt[i];
-    if(cursor) b[k++]='_'; b[k]=0;
-    gfx_text(x+42, y+12, b, 0x202124, 2);
-}
-/* logo DuckDuckGo (circulo laranja + marca) */
-static void ddg_logo(int x, int y, int s){
-    int r = 8*s/2 + 2;
-    gfx_circle(x+r, y+8*s/2, r, 0xDE5833);
-    gfx_circle(x+r+2, y+8*s/2-2, r/2, 0xFFFFFF);   /* "cabeca" do pato */
-    gfx_text(x+2*r+8, y, "DuckDuckGo", 0x202124, s);
-}
-static void ddg_home(const char *q){
-    gfx_rect(8, 110, SCRW-16, 600, 0xFFFFFF);
-    ddg_logo(70, 190, 3);
-    searchbox(36, 270, SCRW-72, q, 1);
-    gfx_round(150, 340, 180, 42, 8, 0xDE5833);
-    gfx_text_center(240, 352, "Pesquisar", 0xFFFFFF, 2);
-    gfx_text_center(SCRW/2, 410, "Busca real, sem rastreamento", 0x70757A, 1);
-    gfx_text_center(SCRW/2, 432, "digite e toque em Ir", 0x9AA0A6, 1);
-}
 /* ---- links clicaveis encontrados no conteudo renderizado ---- */
 #define MAXBOX 80
 #define MAXURL 48
@@ -301,130 +261,144 @@ static int render_md(int x, int y0, int maxcols, int ct, int cb, int scroll, con
     }
     return row + (col>0?1:0);
 }
-/* ---- ponte web: o kernel pede, o JS busca de verdade e escreve o texto na
-   RAM (mesmo mecanismo do toque e das imagens, que ja funcionam no celular).
-   Layout em WBASE: [0]=req [1]=done [2]=status(1 ok/2 erro) [3]=len  +16 url  +512 texto */
-#define WBASE 0x1400000u
+/* ---- ponte web grafica: o kernel pede uma URL; o JS (rodando no Chrome real
+   do celular) renderiza a pagina num motor de verdade e devolve OU os pixels
+   do screenshot (modo Visual) OU o texto limpo com links (modo Texto).
+   WBASE: [0]req [1]done [2]status(1ok/2erro) [3]w [4]h [5]mode(0 texto/1 visual)
+          +32 url    +512 texto   |  pixels RGB em WSHOT */
+#define WBASE  0x1400000u
+#define WSHOT  0x1800000u
 static volatile u32 *const web_hdr  = (volatile u32*)WBASE;
-static char *const         web_url  = (char*)(WBASE+16);
+static char *const         web_url  = (char*)(WBASE+32);
 static char *const         web_text = (char*)(WBASE+512);
-static void web_fetch(const char *url){
-    int i=0; for(; url[i] && i<255; i++) web_url[i]=url[i]; web_url[i]=0;
-    web_hdr[2]=0;                       /* status pendente */
-    web_hdr[0] = web_hdr[0] + 1;        /* req++ dispara o fetch no JS */
+static const volatile u8 *const web_px = (const volatile u8*)WSHOT;
+static void web_fetch(const char *url, int mode){
+    int i=0; for(; url[i] && i<223; i++) web_url[i]=url[i]; web_url[i]=0;
+    web_hdr[2]=0; web_hdr[5]=(u32)mode;     /* status pendente + modo */
+    web_hdr[0] = web_hdr[0] + 1;            /* req++ dispara o fetch no JS */
 }
-/* monta a URL de busca do DuckDuckGo Lite e pede pela ponte */
-static void ddg_search(const char *term){
-    char u[220]; int n=0;
-    const char *pre="lite.duckduckgo.com/lite/?q=";
-    for(int i=0;pre[i];i++) u[n++]=pre[i];
-    const char *hex="0123456789ABCDEF";
-    for(int i=0; term[i] && n<210; i++){
-        unsigned char c = (unsigned char)term[i];
-        if(c==' ') u[n++]='+';
-        else if((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='-'||c=='.'||c=='_') u[n++]=c;
-        else { u[n++]='%'; u[n++]=hex[(c>>4)&15]; u[n++]=hex[c&15]; }
+/* a partir do que o usuario digitou, monta o alvo: termo -> busca; senao site */
+static void build_target(const char *in, int visual, char *out, char *gq){
+    if(in[0] && !has_dot(in)){                              /* termo de busca */
+        int g=0; for(; in[g] && g<78; g++) gq[g]=in[g]; gq[g]=0;
+        const char *pre = visual ? "www.google.com/search?q=" : "lite.duckduckgo.com/lite/?q=";
+        int n=0; for(int i=0;pre[i];i++) out[n++]=pre[i];
+        const char *hex="0123456789ABCDEF";
+        for(int i=0; in[i] && n<210; i++){
+            unsigned char c=(unsigned char)in[i];
+            if(c==' ') out[n++]='+';
+            else if((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='-'||c=='.'||c=='_') out[n++]=c;
+            else { out[n++]='%'; out[n++]=hex[(c>>4)&15]; out[n++]=hex[c&15]; }
+        }
+        out[n]=0;
+    } else {                                                /* site direto */
+        gq[0]=0; int n=0; for(; in[n] && n<210; n++) out[n]=in[n]; out[n]=0;
     }
-    u[n]=0; web_fetch(u);
 }
-/* decide: home, busca real no DDG, ou abrir um site direto */
-static void browser_go(char *url, int *gmode, char *gq){
-    if(url[0]==0 || eq_ci(url,"google.com") || eq_ci(url,"www.google.com") ||
-       eq_ci(url,"google") || eq_ci(url,"duckduckgo.com") || eq_ci(url,"duckduckgo") ||
-       eq_ci(url,"ddg")){ *gmode=1; gq[0]=0; return; }     /* home do buscador */
-    if(!has_dot(url)){                                      /* termo -> busca real */
-        int k=0; for(int j=0; url[j] && k<78; j++) gq[k++]=url[j]; gq[k]=0;
-        *gmode=0; ddg_search(gq); return;
-    }
-    *gmode=0; gq[0]=0; web_fetch(url);                      /* site real da internet */
-}
-#define BCT 160          /* topo da area de conteudo (clip) */
-#define BCB 536          /* base da area de conteudo (clip) */
 void app_browser(void){
-    static char url[160] = "duckduckgo.com"; static int ulen = 14; static int go = 0;
-    static int gmode = 1; static char gq[80] = "";  /* 0=web/resultado  1=home */
-    static int fresh = 1;  /* na home, a 1a tecla limpa a barra */
-    static int scroll = 0, total_rows = 0;
+    static char url[224] = "google.com"; static int ulen = 10;
+    static char gq[80] = "";
+    static int visual = 1;          /* 1 = grafico (screenshot)  0 = texto/links */
+    static int scroll = 0, content_h = 0;
     static int dragging = 0, last_y = 0, start_y = 0, moved = 0;
+    static int editing = 0, started = 0;
     static u32 seen_req = 0;
+
+    /* primeira vez: abre o Google de verdade, em modo grafico */
+    if(!started){ started = 1; char tg[224]; build_target("google.com", visual, tg, gq);
+                  ulen = strlen(url); web_fetch(tg, visual); }
+
     gfx_rect(0,0,SCRW,SCRH, 0x0B1220);
     ui_topbar("Navegador");
 
-    /* barra de URL */
-    gfx_round(8, 56, SCRW-90, 36, 8, 0x1E293B);
-    char shown[64]; int s0 = ulen > 36 ? ulen-36 : 0, k=0;
-    for(int i=s0; i<ulen; i++) shown[k++]=url[i]; shown[k++]='_'; shown[k]=0;
+    /* barra de URL + botoes Ir e modo */
+    if(ui_hit(8, 56, SCRW-128, 36)) editing = 1;
+    gfx_round(8, 56, SCRW-128, 36, 8, 0x1E293B);
+    char shown[60]; int s0 = ulen > 40 ? ulen-40 : 0, kk=0;
+    for(int i=s0; i<ulen; i++) shown[kk++]=url[i]; if(editing) shown[kk++]='_'; shown[kk]=0;
     gfx_text(16, 64, shown, 0xE5E7EB, 1);
-    if(ui_button(SCRW-78, 56, 70, 36, "Ir", 0x2563EB, 0xFFFFFF, 2)){
-        url[ulen]=0; browser_go(url, &gmode, gq); if(gmode==1) fresh=1; go=1;
+    int do_go = 0;
+    if(ui_button(SCRW-116, 56, 50, 36, "Ir", 0x2563EB, 0xFFFFFF, 2)){ do_go = 1; editing = 0; }
+    if(ui_button(SCRW-62, 56, 54, 36, visual?"Texto":"Visual", 0x334155, 0xFFFFFF, 1)){
+        visual = !visual; char tg[224]; url[ulen]=0; build_target(url, visual, tg, gq);
+        scroll = 0; web_fetch(tg, visual);
     }
 
-    if(gmode == 1){ ddg_home(gq); goto osk; }
+    if(do_go){ char tg[224]; url[ulen]=0; build_target(url, visual, tg, gq); scroll=0; web_fetch(tg, visual); }
 
-    /* nova navegacao -> volta a rolagem pro topo */
+    /* nova navegacao -> rolagem pro topo */
     if(web_hdr[0] != seen_req){ seen_req = web_hdr[0]; scroll = 0; }
 
-    /* cabecalho: caixa de busca com o termo, ou a URL */
-    if(gq[0]){ gfx_rect(8, 96, SCRW-16, 36, 0xFFFFFF); searchbox(12, 94, SCRW-24, gq, 0); }
-    else gfx_text(12, 100, url, 0x6EE7B7, 1);
-
-    /* estado da ponte web */
     int loading = (web_hdr[0]!=0 && web_hdr[1]!=web_hdr[0]);
-    int ready   = (web_hdr[0]!=0 && web_hdr[1]==web_hdr[0]);
-    const char *st = loading ? "buscando..." : (ready ? (web_hdr[2]==1?"ok":"erro de rede") : "pronto");
-    gfx_text(12, 138, st, (ready&&web_hdr[2]==2)?0xEF4444:0x6EE7B7, 1);
+    int ready   = (web_hdr[0]!=0 && web_hdr[1]==web_hdr[0] && web_hdr[2]==1);
+    int err     = (web_hdr[0]!=0 && web_hdr[1]==web_hdr[0] && web_hdr[2]==2);
 
-    /* --- rolagem por arraste dentro da area de conteudo --- */
-    int in_area = ui_inside(8, 156, SCRW-16, 384);
+    /* viewport do conteudo (maior quando o teclado esta escondido) */
+    int VPTOP = 96, VPBOT = editing ? 556 : 752;
+    int vph = VPBOT - VPTOP;
+
+    /* rolagem por arraste */
+    int in_area = ui_inside(0, VPTOP, SCRW, vph);
     if(g_ptr.down && (in_area || dragging)){
         if(!dragging){ dragging = 1; last_y = start_y = g_ptr.y; moved = 0; }
         else { scroll -= (g_ptr.y - last_y); last_y = g_ptr.y;
-               if(g_ptr.y-start_y > 8 || start_y-g_ptr.y > 8) moved = 1; }
+               if(g_ptr.y-start_y>8 || start_y-g_ptr.y>8) moved = 1; }
     }
-    int maxscroll = total_rows*16 - (BCB-BCT); if(maxscroll < 0) maxscroll = 0;
+    int maxscroll = content_h - vph; if(maxscroll < 0) maxscroll = 0;
     if(scroll > maxscroll) scroll = maxscroll; if(scroll < 0) scroll = 0;
 
-    /* conteudo: texto que o JS escreveu na RAM */
-    gfx_round(8, 156, SCRW-16, 384, 8, 0x0E1626);
-    if(ready && web_hdr[2]==1){
-        total_rows = render_md(16, 166, 56, BCT, BCB, scroll, web_text);
-        /* barra de rolagem */
-        if(maxscroll > 0){
-            int track = BCB-BCT, kh = track*(BCB-BCT)/(total_rows*16); if(kh<20) kh=20;
-            int ky = BCT + scroll*(track-kh)/maxscroll;
-            gfx_round(SCRW-12, ky, 4, kh, 2, 0x3B4252);
+    /* fundo do conteudo */
+    gfx_rect(0, VPTOP, SCRW, vph, 0xFFFFFF);
+
+    if(ready && visual){
+        /* desenha o screenshot real da pagina, linha a linha, com scroll */
+        int iw=(int)web_hdr[3], ih=(int)web_hdr[4];
+        if(iw>SCRW) iw=SCRW; if(iw<1) iw=1;
+        content_h = ih;
+        for(int sy=VPTOP; sy<VPBOT; sy++){
+            int srow = scroll + (sy - VPTOP);
+            if(srow>=0 && srow<ih) gfx_blit_row(sy, 0, iw, web_px + (u32)srow*iw*3);
         }
-    } else if(ready && web_hdr[2]==2){
-        total_rows = 0; gfx_text(16, 168, "sem conexao (proxy fora ou sem internet)", 0xEF4444, 1);
+    } else if(ready && !visual){
+        content_h = render_md(12, VPTOP+8, 58, VPTOP, VPBOT, scroll, web_text)*16 + 16;
+    } else if(err){
+        content_h = 0; gfx_text(16, VPTOP+12, "sem conexao (rede fora?)", 0xEF4444, 1);
     } else if(loading){
-        total_rows = 0; gfx_text(16, 168, "buscando na internet...", 0x9AA0A6, 1);
+        content_h = 0;
+        gfx_text_center(SCRW/2, VPTOP+vph/2-8, visual?"renderizando pagina...":"buscando...", 0x64748B, 2);
     }
 
-    /* --- toque num link (tap curto, nao arraste) -> abre o site --- */
-    if(g_ptr.clicked && !moved && in_area && ready){
-        for(int b=0; b<g_nbox; b++){
-            if(g_ptr.x >= g_box[b].x && g_ptr.x < g_box[b].x+g_box[b].w &&
-               g_ptr.y >= g_box[b].y && g_ptr.y < g_box[b].y+16){
-                const char *tg = g_url[g_box[b].u];
-                int n=0; for(; tg[n] && n<158; n++) url[n]=tg[n]; url[n]=0; ulen=n;
-                gmode=0; gq[0]=0; scroll=0; web_fetch(tg);
-                break;
+    /* barra de rolagem */
+    if(maxscroll > 0){
+        int kh = vph*vph/content_h; if(kh<24) kh=24;
+        int ky = VPTOP + scroll*(vph-kh)/maxscroll;
+        gfx_round(SCRW-6, ky, 4, kh, 2, 0x94A3B8);
+    }
+
+    /* toque em link (so no modo texto; tap curto, nao arraste) */
+    if(!visual && g_ptr.clicked && !moved && in_area && ready){
+        for(int b=0; b<g_nbox; b++)
+            if(g_ptr.x>=g_box[b].x && g_ptr.x<g_box[b].x+g_box[b].w &&
+               g_ptr.y>=g_box[b].y && g_ptr.y<g_box[b].y+16){
+                const char *tg=g_url[g_box[b].u];
+                int n=0; for(; tg[n] && n<222; n++) url[n]=tg[n]; url[n]=0; ulen=n;
+                gq[0]=0; scroll=0; web_fetch(tg, 0); break;
             }
-        }
     }
     if(!g_ptr.down) dragging = 0;
 
-    /* teclado para digitar a URL */
-osk:;
-    char c = osk_render(560);
-    if(c == '\n'){ url[ulen]=0; browser_go(url, &gmode, gq); if(gmode==1) fresh=1; }
-    else if(c == 8){ if(gmode==1 && fresh){ ulen=0; fresh=0; } if(ulen>0) ulen--; }
-    else if(c && ulen < 158){
-        if(gmode==1 && fresh){ ulen=0; fresh=0; }  /* comecou a digitar na home */
-        url[ulen++] = c;
+    /* teclado: aparece so quando se esta editando a URL */
+    if(editing){
+        char c = osk_render(560);
+        if(c == '\n'){ char tg[224]; url[ulen]=0; build_target(url, visual, tg, gq);
+                       scroll=0; web_fetch(tg, visual); editing=0; }
+        else if(c == 8){ if(ulen>0) ulen--; }
+        else if(c && ulen < 220) url[ulen++] = c;
+    } else {
+        gfx_text_center(SCRW/2, 778, "toque na barra de URL para digitar", 0x475569, 1);
     }
-    (void)go;
 }
+
 
 /* ================= Rede ================= */
 static void ip_str(u32 ip, char *out){

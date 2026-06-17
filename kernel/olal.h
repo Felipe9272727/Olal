@@ -43,6 +43,7 @@ void gfx_char(int x, int y, char ch, u32 c, int s);
 void gfx_text(int x, int y, const char *t, u32 c, int s);
 int  gfx_textw(const char *t, int s);
 void gfx_text_center(int cx, int y, const char *t, u32 c, int s);
+void gfx_blit_row(int y, int x0, int w, const volatile u8 *rgb);
 
 /* ----- entrada (mouse/touch + teclado) ----- */
 typedef struct { int x, y; int down; int clicked; } Pointer;

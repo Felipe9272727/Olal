@@ -108,6 +108,16 @@ void gfx_char(int x, int y, char ch, u32 c, int s){
     }
 }
 
+/* desenha uma linha de pixels RGB (3 bytes/pixel) direto no back buffer */
+void gfx_blit_row(int y, int x0, int w, const volatile u8 *rgb){
+    if((unsigned)y >= SCRH) return;
+    u32 *row = &BB[y*SCRW];
+    for(int x = 0; x < w; x++){
+        int dx = x0 + x; if((unsigned)dx >= SCRW) continue;
+        row[dx] = ((u32)rgb[x*3]<<16) | ((u32)rgb[x*3+1]<<8) | rgb[x*3+2];
+    }
+}
+
 void gfx_text(int x, int y, const char *t, u32 c, int s){
     int cx = x;
     for(int i = 0; t[i]; i++){
