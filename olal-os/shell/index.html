@@ -18,7 +18,11 @@
   #status .olal{ color:#2BD17A; font-weight:700; letter-spacing:1px; }
   /* home */
   #home{ flex:1; overflow-y:auto; padding:14px 12px 28px; }
-  #greet{ text-align:center; font-size:30px; font-weight:700; margin:14px 0 18px; color:#f1f5f9; }
+  #greet{ text-align:center; font-size:30px; font-weight:700; margin:14px 0 14px; color:#f1f5f9; }
+  #aihome{ display:flex; align-items:center; gap:10px; margin:0 4px 18px; padding:13px 16px;
+    border-radius:16px; background:linear-gradient(135deg,#13352a,#0e2536);
+    border:1px solid #2BD17A55; }
+  #aihome .d{ font-size:22px; } #aihome .p{ color:#9fb3c8; font-size:15px; }
   #grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px 8px; }
   .app{ display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer; }
   .ico{ width:62px; height:62px; border-radius:18px; display:flex; align-items:center;
@@ -44,6 +48,23 @@
   .field{ width:100%; padding:12px; border-radius:10px; border:1px solid #334155;
     background:#111827; color:#e5e7eb; font-size:16px; }
   iframe{ border:0; width:100%; height:100%; background:#fff; }
+  /* assistente de IA (cerebro do sistema) */
+  #aibtn{ position:fixed; right:16px; bottom:18px; width:58px; height:58px; border-radius:50%;
+    background:linear-gradient(135deg,#2BD17A,#0EA5E9); display:flex; align-items:center;
+    justify-content:center; font-size:26px; box-shadow:0 6px 18px #0008; z-index:50; cursor:pointer; }
+  #aibtn:active{ transform:scale(.9); }
+  #aiover{ position:fixed; inset:0; z-index:60; background:#070b12f2; display:none; flex-direction:column; }
+  #aiover.on{ display:flex; }
+  #aihead{ display:flex; align-items:center; gap:10px; padding:14px 16px; background:#0b1220; }
+  #aihead .dot{ width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#2BD17A,#0EA5E9);
+    display:flex;align-items:center;justify-content:center;font-size:16px; }
+  #aihead .t{ font-weight:700; font-size:17px; flex:1; }
+  #aihead .x{ font-size:22px; color:#94a3b8; padding:4px 10px; }
+  #aichat{ flex:1; overflow:auto; padding:14px; display:flex; flex-direction:column; gap:10px; }
+  .msg{ max-width:84%; padding:10px 13px; border-radius:14px; line-height:1.45; white-space:pre-wrap; }
+  .msg.u{ align-self:flex-end; background:#2563EB; color:#fff; border-bottom-right-radius:4px; }
+  .msg.a{ align-self:flex-start; background:#1e293b; color:#e5e7eb; border-bottom-left-radius:4px; }
+  #aiin{ display:flex; gap:8px; padding:10px; background:#0b1220; }
 </style>
 </head>
 <body>
@@ -51,53 +72,68 @@
   <div id="status"><span class="olal">olal</span><span id="clock">--:--</span></div>
   <div id="home">
     <div id="greet">Bom dia</div>
+    <div id="aihome" onclick="aiOpen()">
+      <span class="d">🤖</span><span class="p">Pergunte qualquer coisa à Olal AI…</span>
+    </div>
     <div id="grid"></div>
   </div>
   <div id="view">
     <div id="bar"><button class="back" onclick="closeApp()">&lt;</button><span class="title" id="vtitle"></span></div>
     <div id="body"></div>
   </div>
+
+  <!-- assistente de IA: o cerebro do sistema, acessivel de qualquer tela -->
+  <div id="aibtn" onclick="aiOpen()">🤖</div>
+  <div id="aiover">
+    <div id="aihead"><span class="dot">🤖</span><span class="t">Olal AI</span>
+      <span class="x" onclick="aiClose()">✕</span></div>
+    <div id="aichat"></div>
+    <div id="aiin"><input class="field" id="aimsg" placeholder="peça qualquer coisa ao Olal...">
+      <button class="btn g" id="aisend">➤</button></div>
+  </div>
 </div>
 
-<script src="model.js"></script>
 <script>
-/* ===== rede neural real do Olal (MLP char-level, pesos em model.js) ===== */
-const AI_SEEDS=[
-  "a gente a entender melhor o mundo ","o sistema operacional cuida da tela ",
-  "eu sou uma rede neural pequena que ","a tecnologia muda o mundo e nos ajuda ",
-  "vamos conversar mais sobre o seu dia ","o computador e uma maquina que segue ",
-  "a curiosidade move o ser humano a ","estudar um pouco a cada dia faz uma ",
-  "a leitura abre portas para mundos novos ","um amigo de verdade escuta e apoia ",
-  "respira fundo vai dar tudo certo um ","ajudar o proximo deixa o mundo um lugar ",
-  "acredite mais no seu potencial voce e ","a vida e feita de pequenos momentos que "];
-function aiIdx(c){ const i=M.VOCAB.indexOf((c||" ").toLowerCase()); return i<0?0:i; }
-function aiForward(ctx){
-  const ce=M.CTX*M.EMB, e=new Float32Array(ce);
-  for(let j=0;j<M.CTX;j++) for(let k=0;k<M.EMB;k++) e[j*M.EMB+k]=M.EMBW[ctx[j]*M.EMB+k];
-  const h=new Float32Array(M.HID);
-  for(let i=0;i<M.HID;i++){ let s=M.B1[i]; for(let n=0;n<ce;n++) s+=e[n]*M.W1[n*M.HID+i]; h[i]=Math.tanh(s); }
-  const lo=new Float32Array(M.V);
-  for(let o=0;o<M.V;o++){ let s=M.B2[o]; for(let i=0;i<M.HID;i++) s+=h[i]*M.W2[i*M.V+o]; lo[o]=s; }
-  return lo;
+/* ============================================================
+   OLAL AI - o cerebro do sistema. Uma LLM de verdade (sem chave,
+   via Pollinations) que conversa E CONTROLA a OS inteira.
+   ============================================================ */
+const AI_SYS =
+`Voce e a Olal AI, a inteligencia que comanda o Olal OS - um sistema operacional 100% movido por IA, feito no celular. Fale em portugues, de forma amigavel, curta e util.
+Voce CONTROLA o sistema. Quando o usuario pedir para abrir um app, tocar musica/video, pesquisar ou navegar, responda em 1 frase curta e ADICIONE no final UMA linha exatamente assim:
+@@ACT {"app":"NOME","query":"..."}
+Apps validos: youtube (query=o que tocar), navegador (query=site ou termo), calc, notas, terminal, relogio, paint, ola32, sistema, rede, config, arquivos, js.
+Exemplos:
+toca lofi -> @@ACT {"app":"youtube","query":"lofi hip hop"}
+abre a wikipedia dos gatos -> @@ACT {"app":"navegador","query":"https://pt.wikipedia.org/wiki/Gato"}
+abre a calculadora -> @@ACT {"app":"calc"}
+Se for so conversa, NAO inclua @@ACT.`;
+
+async function aiAsk(history){
+  // monta um prompt compacto (system + ultimas trocas)
+  const turns = history.slice(-6).map(m=>(m.role==="user"?"Usuario":"Olal")+": "+m.content).join("\n");
+  const prompt = AI_SYS + "\n\n" + turns + "\nOlal:";
+  const url = "https://text.pollinations.ai/" + encodeURIComponent(prompt) + "?model=openai";
+  const r = await fetch(url);
+  if(!r.ok) throw new Error("status "+r.status);
+  return (await r.text()).trim();
 }
-function aiGenerate(prompt,maxlen=150){
-  if(typeof M==="undefined") return "(modelo nao carregou)";
-  let hsh=0; for(let i=0;i<prompt.length;i++) hsh=(hsh*31+prompt.charCodeAt(i))>>>0;
-  const seed=AI_SEEDS[(hsh+(Math.random()*1e9|0))%AI_SEEDS.length];
-  const ctx=[]; for(let i=0;i<M.CTX;i++){ const p=seed.length-M.CTX+i; ctx.push(aiIdx(p>=0?seed[p]:" ")); }
-  let out="",temp=0.5;
-  for(let n=0;n<maxlen;n++){
-    const lo=aiForward(ctx); let mx=lo[0];
-    for(let i=1;i<M.V;i++) if(lo[i]>mx) mx=lo[i];
-    let sum=0; const ps=new Float32Array(M.V);
-    for(let i=0;i<M.V;i++){ ps[i]=Math.exp((lo[i]-mx)/temp); sum+=ps[i]; }
-    let r=Math.random()*sum, pick=M.V-1;
-    for(let i=0;i<M.V;i++){ r-=ps[i]; if(r<=0){ pick=i; break; } }
-    const c=M.VOCAB[pick]; out+=c;
-    for(let i=0;i<M.CTX-1;i++) ctx[i]=ctx[i+1]; ctx[M.CTX-1]=pick;
-    if((c==="."||c==="?")&&n>24) break;
+
+const APP_IDX = {ai:0,terminal:1,calc:2,notas:3,relogio:4,config:5,arquivos:6,paint:7,ola32:8,sistema:9,rede:10,navegador:11,js:12,youtube:13};
+/* executa a acao que a IA decidiu e devolve o texto limpo (sem @@ACT) */
+function aiHandle(resp){
+  let text = resp, act = null;
+  const m = resp.match(/@@ACT\s*(\{[\s\S]*\})/);
+  if(m){ text = resp.slice(0, m.index).trim(); try{ act = JSON.parse(m[1]); }catch(e){} }
+  if(act && act.app && APP_IDX[act.app]!==undefined){
+    openApp(APP_IDX[act.app]);
+    if(act.query){ setTimeout(()=>{
+      if(act.app==="youtube"){ const q=document.getElementById("ytq"); if(q){ q.value=act.query; document.getElementById("ytgo").click(); } }
+      else if(act.app==="navegador"){ const u=document.getElementById("bu"); if(u){ u.value=act.query;
+        (act.query.includes(".")?document.getElementById("bgo"):document.getElementById("brd")).click(); } }
+    },350); }
   }
-  return out.trim();
+  return text || "feito!";
 }
 
 /* ===== mesma lista/cores dos apps do nosso OS ===== */
@@ -138,11 +174,81 @@ function tick(){
 }
 setInterval(tick,1000); tick();
 
+/* ===== assistente de IA global (o cerebro do sistema) ===== */
+let aiHist=[];
+const aiChat=document.getElementById("aichat");
+function aiBubble(role,txt){ const d=document.createElement("div");
+  d.className="msg "+(role==="user"?"u":"a"); d.textContent=txt; aiChat.appendChild(d);
+  aiChat.scrollTop=aiChat.scrollHeight; return d; }
+function aiOpen(prefill){ document.getElementById("aiover").classList.add("on");
+  if(!aiHist.length) aiBubble("a","Oi! Eu sou a Olal AI e comando este sistema. Posso conversar e tambem CONTROLAR a OS: peca 'toca lofi no youtube', 'abre a calculadora', 'pesquisa gatos'...");
+  if(prefill){ document.getElementById("aimsg").value=prefill; aiSend(); }
+  else document.getElementById("aimsg").focus(); }
+function aiClose(){ document.getElementById("aiover").classList.remove("on"); }
+/* parser LOCAL de comandos: a IA controla a OS sem depender da internet */
+function ytGo(q){ openApp(APP_IDX.youtube); setTimeout(()=>{const e=document.getElementById("ytq");
+  if(e){ e.value=q; document.getElementById("ytgo").click(); }},350); }
+function navGo(u){ openApp(APP_IDX.navegador); setTimeout(()=>{const e=document.getElementById("bu");
+  if(e){ e.value=u; (u.includes(".")?document.getElementById("bgo"):document.getElementById("brd")).click(); }},350); }
+const APP_KW={calc:["calculadora","calc"],notas:["notas","nota","bloco de notas"],terminal:["terminal","console"],
+  relogio:["relogio","relógio"],paint:["paint","pintura","desenho"],ola32:["ola-32","ola32"],sistema:["sistema"],
+  rede:["rede"],config:["config","configura"],arquivos:["arquivos","arquivo"],js:["olal js","javascript"],
+  navegador:["navegador"],youtube:["youtube"],ai:["assistente","olal ai"]};
+function localIntent(text){
+  const t=" "+text.toLowerCase().trim()+" "; let m;
+  if(/que horas|hora agora|horas s[ãa]o/.test(t)) return "Agora são "+new Date().toLocaleTimeString()+" ⏰";
+  if((m=t.match(/quanto (?:e|é|da|dá|vale)\s+([0-9+\-*/.,() ]+)/))){ try{
+      const r=Function('"use strict";return('+m[1].replace(/,/g,".")+')')(); if(isFinite(r)) return m[1].trim()+" = "+r; }catch(e){} }
+  if((m=t.match(/\b(?:toc[ae]r?|play|p[õo]e|poe|coloca|reproduz(?:ir)?)\s+(.+?)\s*$/))){
+    const q=m[1].replace(/\s+no\s+youtube\s*$/,"").trim(); if(q){ ytGo(q); return 'tocando "'+q+'" no YouTube 🎵'; } }
+  if((m=t.match(/\b(?:pesquis[ae]r?|busc[ae]r?|procur[ae]r?)\s+(.+?)\s+no\s+youtube\b/))){
+    ytGo(m[1].trim()); return 'buscando "'+m[1].trim()+'" no YouTube'; }
+  if((m=t.match(/\b(?:abr[ae]?|abrir|abre o|abre a|vai (?:pro|para)|entra n[ao]|me leva (?:pro|para))\s+(.+?)\s*$/))){
+    const what=m[1].trim();
+    for(const [app,kw] of Object.entries(APP_KW)) if(kw.some(k=>what.includes(k))){ openApp(APP_IDX[app]); return "abrindo "+app+" ✅"; }
+    if(/\S+\.\S+/.test(what)){ navGo(what); return "abrindo "+what; } }
+  if((m=t.match(/\b(?:naveg(?:ar|a)?(?: para| pro)?|v[aá] (?:para|pro)|acessa(?:r)?|entra n[ao])\s+(\S+\.\S+)/))){
+    navGo(m[1]); return "abrindo "+m[1]; }
+  return null;
+}
+async function aiSend(){
+  const inp=document.getElementById("aimsg"); const t=inp.value.trim(); if(!t) return; inp.value="";
+  aiBubble("user",t); aiHist.push({role:"user",content:t});
+  const local=localIntent(t);
+  if(local){ aiBubble("a",local); aiHist.push({role:"assistant",content:local}); return; }
+  const b=aiBubble("a","…");
+  try{ const resp=await aiAsk(aiHist); const clean=aiHandle(resp);
+       b.textContent=clean; aiHist.push({role:"assistant",content:clean}); }
+  catch(e){ b.textContent="Estou aqui! (a IA online não respondeu agora) — mas posso controlar o sistema: tente \"abre a calculadora\" ou \"toca lofi\"."; }
+  aiChat.scrollTop=aiChat.scrollHeight;
+}
+document.getElementById("aisend").onclick=aiSend;
+document.getElementById("aimsg").addEventListener("keydown",e=>{ if(e.key==="Enter") aiSend(); });
+
 /* ============================ APPS ============================ */
 
 /* ----- YouTube REAL: busca de verdade + player por ID (toca de verdade) -----
    O embed por listType=search foi descontinuado pelo YouTube; entao buscamos
    os resultados reais (via r.jina.ai) e tocamos pelo ID, que e confiavel. */
+async function ytSearch(term){
+  const insts=["api.piped.private.coffee","pipedapi.leptons.xyz","pipedapi.r4fo.com","pipedapi.adminforge.de","pipedapi.kavin.rocks"];
+  for(const h of insts){
+    try{ const r=await fetch("https://"+h+"/search?q="+encodeURIComponent(term)+"&filter=videos");
+      if(!r.ok) continue; const j=await r.json(); const arr=j.items||j; if(!arr||!arr.length) continue;
+      const items=[], seen=new Set();
+      for(const v of arr){ const mm=(v.url||"").match(/v=([\w-]{11})/); if(!mm||seen.has(mm[1]))continue;
+        seen.add(mm[1]); items.push({title:(v.title||"video").trim(),id:mm[1]}); if(items.length>=25)break; }
+      if(items.length) return items;
+    }catch(e){}
+  }
+  try{ const r=await fetch("https://r.jina.ai/https://www.youtube.com/results?search_query="+encodeURIComponent(term));
+    const t=await r.text(); const seen=new Set(), items=[];
+    const re=/\[([^\]]{4,90})\]\([^)]*watch\?v=([\w-]{11})/g; let m;
+    while((m=re.exec(t)) && items.length<25){ const ti=m[1].trim(), id=m[2];
+      if(seen.has(id)||/^(mix|https?|www\.)/i.test(ti)||ti.length<4)continue; seen.add(id); items.push({title:ti,id}); }
+    return items;
+  }catch(e){ return []; }
+}
 function appYT(b){
   b.innerHTML=`<div style="padding:10px;display:flex;gap:8px">
       <input class="field" id="ytq" placeholder="pesquisar no YouTube..." value="lofi hip hop">
@@ -158,17 +264,8 @@ function appYT(b){
   async function search(){
     const term=q.value.trim(); if(!term) return;
     player.innerHTML=""; list.innerHTML='<div style="padding:20px;color:#94a3b8">buscando...</div>';
-    try{
-      const r=await fetch("https://r.jina.ai/https://www.youtube.com/results?search_query="+encodeURIComponent(term));
-      const t=await r.text();
-      const seen=new Set(), items=[]; const re=/\[([^\]]{4,90})\]\([^)]*watch\?v=([\w-]{11})/g; let m;
-      while((m=re.exec(t)) && items.length<25){
-        const title=m[1].trim(), id=m[2];
-        if(seen.has(id)) continue; seen.add(id);
-        if(/^(mix|https?|www\.|\d+:\d+|)/i.test(title)||title.length<4) continue;
-        items.push({title,id});
-      }
-      if(!items.length){ list.innerHTML='<div style="padding:20px;color:#ef4444">nada encontrado (sem internet?)</div>'; return; }
+    const items=await ytSearch(term);
+    if(!items.length){ list.innerHTML='<div style="padding:20px;color:#ef4444">nada encontrado (rede instavel, tente de novo)</div>'; return; }
       list.innerHTML=items.map(v=>
         `<div class="ytrow" data-id="${v.id}" style="display:flex;gap:10px;align-items:flex-start;padding:10px;border-bottom:1px solid #1e293b;cursor:pointer">
           <img loading="lazy" src="https://i.ytimg.com/vi/${v.id}/mqdefault.jpg"
@@ -176,8 +273,7 @@ function appYT(b){
           <div style="font-size:14px;line-height:1.35">${v.title}</div></div>`).join("");
       list.querySelectorAll(".ytrow").forEach(row=>row.onclick=()=>{ play(row.dataset.id);
         player.scrollIntoView({block:"start"}); });
-      player.innerHTML='<div style="padding:14px;color:#94a3b8;text-align:center">toque num video para tocar</div>';
-    }catch(e){ list.innerHTML='<div style="padding:20px;color:#ef4444">erro: '+e.message+'</div>'; }
+    player.innerHTML='<div style="padding:14px;color:#94a3b8;text-align:center">toque num video para tocar</div>';
   }
   b.querySelector("#ytgo").onclick=search;
   q.addEventListener("keydown",e=>{ if(e.key==="Enter") search(); });
@@ -191,16 +287,19 @@ function appBrowser(b){
       <button class="btn" id="bgo">Ir</button>
       <button class="btn s" id="brd" title="modo leitura">Aa</button></div>
     <div id="bwrap" style="height:calc(100% - 64px);position:relative"></div>`;
-  const norm=()=>{ let u=b.querySelector("#bu").value.trim(); if(!u) return null;
-    if(!u.includes(".")) return "https://duckduckgo.com/?q="+encodeURIComponent(u);
-    return u.startsWith("http")?u:"https://"+u; };
-  const go=()=>{ const u=norm(); if(!u) return;
+  const iframeUrl=()=>{ let u=b.querySelector("#bu").value.trim();
+    if(!u||!u.includes(".")) return null; return u.startsWith("http")?u:"https://"+u; };
+  const go=()=>{ const u=iframeUrl();
+    if(!u){ read(); return; }   /* termo de busca -> modo leitura (iframe de busca e bloqueado) */
     b.querySelector("#bwrap").innerHTML=
       `<iframe src="${u}"></iframe>
        <div style="position:absolute;bottom:6px;right:8px;font-size:11px;color:#64748b;background:#000a;padding:2px 6px;border-radius:6px">
        nao abriu? toque em "Aa" (leitura)</div>`; };
-  const read=async()=>{ const u=norm(); if(!u) return; const w=b.querySelector("#bwrap");
-    w.innerHTML='<div style="padding:16px;color:#94a3b8">lendo a pagina...</div>';
+  const read=async()=>{ let raw=b.querySelector("#bu").value.trim(); if(!raw) return;
+    const u = raw.includes(".") ? (raw.startsWith("http")?raw:"https://"+raw)
+            : "https://html.duckduckgo.com/html/?q="+encodeURIComponent(raw);
+    const w=b.querySelector("#bwrap");
+    w.innerHTML='<div style="padding:16px;color:#94a3b8">lendo...</div>';
     try{ const r=await fetch("https://r.jina.ai/"+u); let t=await r.text();
       t=t.replace(/^[\s\S]*?Markdown Content:\s*/,"");
       t=t.replace(/!\[[^\]]*\]\([^)]*\)/g,"").replace(/\[([^\]]+)\]\([^)]*\)/g,"$1").replace(/[*#`>|]/g,"");
@@ -335,22 +434,16 @@ function appPaint(b){
   cv.addEventListener("touchstart",start);cv.addEventListener("touchmove",move);cv.addEventListener("touchend",end);
 }
 
-/* ----- Olal AI: a NOSSA rede neural (MLP char-level) rodando em JS ----- */
+/* ----- Olal AI: abre o assistente (a LLM que comanda a OS) ----- */
 function appAI(b){
-  b.innerHTML=`<div class="pad" style="height:100%;display:flex;flex-direction:column;gap:10px">
-    <div id="chat" style="flex:1;overflow:auto;background:#0a1a14;border-radius:10px;padding:12px;color:#d1fae5;line-height:1.5">
-      Oi! Eu sou a <b>Olal AI</b>, uma rede neural (MLP char-level) que roda
-      aqui dentro - os mesmos pesos do nosso kernel. Fale comigo:<br><br></div>
-    <div style="display:flex;gap:8px"><input class="field" id="aiq" placeholder="diga algo...">
-    <button class="btn g" id="ais">&gt;</button></div></div>`;
-  const chat=b.querySelector("#chat"),q=b.querySelector("#aiq");
-  const send=()=>{ const t=q.value.trim(); if(!t)return; q.value="";
-    chat.innerHTML+=`<b>voce:</b> ${t}<br><b style="color:#2BD17A">olal:</b> <i>pensando...</i><br><br>`;
-    chat.scrollTop=chat.scrollHeight;
-    setTimeout(()=>{ const r=aiGenerate(t);
-      chat.lastChild; chat.innerHTML=chat.innerHTML.replace("<i>pensando...</i>", r||"...");
-      chat.scrollTop=chat.scrollHeight; }, 30); };
-  b.querySelector("#ais").onclick=send; q.onkeydown=e=>{if(e.key==="Enter")send();};
+  b.innerHTML=`<div class="pad" style="text-align:center;padding-top:60px">
+    <div style="font-size:54px">🤖</div>
+    <div style="font-size:22px;font-weight:700;margin:10px 0">Olal AI</div>
+    <div style="color:#94a3b8;line-height:1.5;margin-bottom:24px">A inteligencia que comanda o
+      Olal OS. Converse e peca para ela controlar o sistema:<br>tocar musica, abrir apps, pesquisar...</div>
+    <button class="btn g" style="font-size:17px;padding:14px 26px" onclick="aiOpen()">Falar com a Olal AI</button>
+    </div>`;
+  setTimeout(()=>aiOpen(),150);
 }
 
 /* ----- Config / Sistema / Rede / Arquivos ----- */
