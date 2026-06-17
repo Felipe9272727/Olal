@@ -12,13 +12,14 @@ echo "==================================================="
 echo "   Olal OS  -  distro Debian no seu celular"
 echo "==================================================="
 
-echo ">> [1/4] Termux: proot, X11, audio, GPU..."
+echo ">> [1/4] Termux: proot, X11, audio, GPU (Turnip/Adreno)..."
 yes | pkg update || true
 pkg install -y proot-distro x11-repo
 pkg update -y || true
 pkg install -y termux-x11-nightly pulseaudio python
-# aceleracao de GPU (virgl) - melhora/destrava a renderizacao do navegador
-pkg install -y virglrenderer-android 2>/dev/null || pkg install -y mesa 2>/dev/null || true
+# GPU: virgl (desktop) + Turnip/Freedreno (Vulkan real da Adreno -> navegador via zink)
+pkg install -y virglrenderer-android mesa-vulkan-icd-freedreno-dri3 || \
+  pkg install -y virglrenderer-android mesa-vulkan-icd-freedreno || true
 
 echo ">> [2/4] instalando a base Debian (demora)..."
 proot-distro install debian || echo "   (debian ja instalado)"
