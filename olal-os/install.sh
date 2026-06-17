@@ -14,12 +14,14 @@ echo "==================================================="
 
 echo ">> [1/4] Termux: proot, X11, audio, GPU (Turnip/Adreno)..."
 yes | pkg update || true
-pkg install -y proot-distro x11-repo
+# x11-repo (Termux:X11/virgl) + tur-repo (driver Turnip da Adreno)
+pkg install -y proot-distro x11-repo tur-repo
 pkg update -y || true
 pkg install -y termux-x11-nightly pulseaudio python
 # GPU: virgl (desktop) + Turnip/Freedreno (Vulkan real da Adreno -> navegador via zink)
+# mesa-vulkan-icd-freedreno-dri3 vem do tur-repo (igual phoenixbyrd/Termux_XFCE)
 pkg install -y virglrenderer-android mesa-vulkan-icd-freedreno-dri3 || \
-  pkg install -y virglrenderer-android mesa-vulkan-icd-freedreno || true
+  pkg install -y virglrenderer-android || true
 
 echo ">> [2/4] instalando a base Debian (demora)..."
 proot-distro install debian || echo "   (debian ja instalado)"
