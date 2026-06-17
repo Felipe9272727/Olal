@@ -55,12 +55,17 @@ sleep 1
 openbox &
 sleep 1
 # Olal em tela cheia (quiosque). Motor real -> YouTube toca de verdade.
-exec $CHROME --kiosk --no-sandbox --disable-setuid-sandbox --no-zygote \\
-  --disable-dev-shm-usage --disable-gpu --use-gl=swiftshader \\
-  --autoplay-policy=no-user-gesture-required \\
-  --start-fullscreen --force-device-scale-factor=1 \\
-  --user-data-dir=/root/.olal-chrome \\
-  http://localhost:8080/index.html
+# loop: se o Chromium fechar/crashar (acontece em arm64/proot), reinicia.
+while true; do
+  $CHROME --kiosk --no-sandbox --disable-setuid-sandbox --no-zygote \\
+    --disable-dev-shm-usage --disable-gpu --use-gl=swiftshader \\
+    --autoplay-policy=no-user-gesture-required \\
+    --start-fullscreen --force-device-scale-factor=1 \\
+    --user-data-dir=/root/.olal-chrome \\
+    http://localhost:8080/index.html
+  echo "Olal: a interface fechou. Reiniciando em 2s... (Ctrl+C para sair)"
+  sleep 2
+done
 EOF
 chmod +x /usr/local/bin/olal-shell
 
