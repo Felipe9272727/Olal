@@ -50,10 +50,15 @@ touch. 🎉
 > diferente — reinstale os dois do F-Droid.
 
 ## O que funciona
-- **YouTube** — abre o YouTube **real** e toca vídeo (é o Chromium de verdade).
-- **Navegador** — abre sites de verdade.
-- **Olal AI, Terminal, Calc, Notas, Relógio, Config, Arquivos, Paint, OLA-32,
-  Sistema, Rede, Olal JS** — todos os apps da nossa OS, com o mesmo design.
+- **Olal AI (o coração da OS)** — um assistente acessível de qualquer tela
+  (barra na home + botão 🤖 flutuante). Ele **conversa** (LLM de verdade) e
+  **controla o sistema**: "toca lofi no youtube", "abre a calculadora",
+  "quanto é 17×23", "que horas são", "abre wikipedia.org". Os comandos
+  funcionam **mesmo sem internet**.
+- **YouTube** — busca real (Piped) e toca vídeo de verdade (Chromium real).
+- **Navegador** — abre sites de verdade; busca abre em modo leitura.
+- **Terminal, Calc, Notas, Relógio, Config, Arquivos, Paint, OLA-32, Sistema,
+  Rede, Olal JS** — todos os apps da nossa OS, com o mesmo design e touch.
 - **OLA-32** — a nossa CPU própria roda no app **e** no terminal (comando `ola32`).
 
 ## Para desligar
