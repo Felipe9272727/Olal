@@ -9,7 +9,7 @@ na interface do Olal** (a mesma cara, com todos os apps e touch), e os apps de
 ## ⚡ Quer ver a interface AGORA (sem instalar nada)?
 Abra no Chrome do seu celular:
 
-**https://felipe9272727.github.io/olal-os/shell/**
+**https://felipe9272727.github.io/Olal/olal-os/shell/**
 
 É a mesma interface do Olal (home, apps, touch, YouTube real, Olal AI com a
 rede neural). Bom para testar a cara antes de fazer a instalação completa do
