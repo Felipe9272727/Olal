@@ -48,6 +48,8 @@ export DISPLAY=:0
 export PULSE_SERVER=tcp:127.0.0.1
 export XDG_RUNTIME_DIR=/run/olal
 mkdir -p \$XDG_RUNTIME_DIR; chmod 700 \$XDG_RUNTIME_DIR
+# barramento dbus (o Chromium precisa; sem ele pode nem abrir)
+mkdir -p /run/dbus && dbus-daemon --system --fork 2>/dev/null || true
 # serve a interface por HTTP local (o YouTube embed exige origem http, nao file://)
 ( cd /opt/olal/shell && python3 -m http.server 8080 >/dev/null 2>&1 & )
 sleep 1
