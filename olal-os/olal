@@ -1,39 +1,47 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # ============================================================
-#  Olal OS - inicia o desktop Debian XFCE no Termux:X11, com
-#  aceleracao de GPU (virgl) para o navegador renderizar.
+#  Olal OS - inicia o desktop Debian XFCE no Termux:X11 com
+#  ACELERACAO DE GPU (virgl) -> o navegador renderiza no arm64.
+#  Metodo validado (LinuxDroidMaster/Termux-Desktops).
 # ============================================================
 
-# 1) audio (YouTube com som)
-pulseaudio --start --exit-idle-time=-1 \
-  --load="module-native-protocol-tcp auth-ip-acl=127.0.0.1 auth-anonymous=1" 2>/dev/null || true
+# 1) limpa um X11 anterior
+kill -9 $(pgrep -f "termux.x11") 2>/dev/null
 
-# 2) servidor de GPU virtual (virgl) -> OpenGL acelerado dentro do proot
+# 2) audio (PulseAudio sobre TCP -> YouTube com som)
+pulseaudio --start \
+  --load="module-native-protocol-tcp auth-ip-acl=127.0.0.1 auth-anonymous=1" \
+  --exit-idle-time=-1 2>/dev/null || true
+
+# 3) servidor virgl (GPU) -- TEM que subir ANTES do X
 pkill -f virgl_test_server 2>/dev/null
 if command -v virgl_test_server_android >/dev/null 2>&1; then
-  MESA_NO_ERROR=1 virgl_test_server_android --use-egl-surfaceless >/dev/null 2>&1 &
+  virgl_test_server_android >/dev/null 2>&1 &
+else
+  echo "AVISO: virglrenderer-android nao instalado (sem GPU). Rode install.sh."
 fi
 
-# 3) servidor de tela (Termux:X11). socket no $TMPDIR p/ casar com --shared-tmp
-pkill -f "termux-x11 :0" 2>/dev/null
-export TMPDIR="$PREFIX/tmp"; mkdir -p "$TMPDIR"
+# 4) servidor de tela (Termux:X11)
+export XDG_RUNTIME_DIR=${TMPDIR}
 termux-x11 :0 -ac >/dev/null 2>&1 &
-sleep 2
+sleep 3
 am start --user 0 -n com.termux.x11/com.termux.x11.MainActivity >/dev/null 2>&1 || true
-sleep 2
+sleep 1
 
 echo ">> Abra o app Termux:X11 para ver o desktop do Olal."
 
-# 4) sobe o desktop XFCE dentro do Debian, com GPU acelerada e dbus
-proot-distro login debian --shared-tmp -- bash -lc '
-  mkdir -p /run/dbus
-  export DISPLAY=:0
+# 5) desktop XFCE no Debian, com GPU acelerada (virpipe), audio e dbus
+proot-distro login debian --shared-tmp -- /bin/bash -c '
   export PULSE_SERVER=127.0.0.1
+  export DISPLAY=:0
+  export XDG_RUNTIME_DIR=${TMPDIR}
   export GALLIUM_DRIVER=virpipe
   export MESA_GL_VERSION_OVERRIDE=4.0
   export MESA_GLES_VERSION_OVERRIDE=3.2
-  export OLAL_BROWSER=firefox-esr
+  export MESA_NO_ERROR=1
   export MOZ_X11_EGL=1
   export MOZ_FAKE_NO_SANDBOX=1
+  export MOZ_DISABLE_RDD_SANDBOX=1
+  mkdir -p /run/dbus
   dbus-launch --exit-with-session startxfce4
 '

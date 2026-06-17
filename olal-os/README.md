@@ -1,52 +1,58 @@
-# Olal OS — no seu celular (Android, sem root)
+# Olal OS — distro Debian de verdade no seu celular (Android, sem root)
 
-O Olal OS roda no seu Android usando o **Termux** (um Linux real no celular).
-A interface é a mesma do Olal — home com os apps, a **Olal AI** (que conversa e
-controla o sistema), **YouTube** real, navegador e touch.
+O Olal OS roda um **Debian Linux real com desktop XFCE** no seu Android (via
+Termux + Termux:X11), com **aceleração de GPU (virgl)** para o navegador
+renderizar, e a **cara do Olal** por cima (wallpaper, apps, a Olal AI, OLA-32).
 
-> ⚡ **Quer ver agora, sem instalar nada?** Abra no Chrome do celular:
+> ⚡ **Só quer a interface, sem instalar nada?** Abra no Chrome do celular:
 > **https://felipe9272727.github.io/Olal/olal-os/shell/**
 
-## Por que duas formas de abrir?
-Renderizar o Chromium do Debian/proot no Termux:X11 dá **tela preta** em muitos
-celulares arm64 (bug do SwiftShader do Chromium no ARM). Por isso o Olal tem
-**dois modos**, e o recomendado renderiza 100%.
+## Por que GPU (virgl)?
+A "tela preta" do Chromium no arm64 acontece porque o renderizador por
+software (SwiftShader) **não pinta no ARM**. A solução real é dar **OpenGL
+acelerado** ao Debian via **virgl** (`virgl_test_server_android`) + o navegador
+usando **EGL**. Aí ele renderiza. (Método validado pelo projeto
+LinuxDroidMaster/Termux-Desktops.)
 
 ## Instalação
-1. Instale o **Termux** pelo **F-Droid** (não pela Play Store).
-2. (Opcional, só para o modo tela cheia) instale o app **Termux:X11** (F-Droid).
-3. No Termux:
+1. Instale **Termux** e **Termux:X11** pelo **F-Droid** (não pela Play Store).
+2. No Termux:
 ```bash
 pkg install -y git
 git clone https://github.com/Felipe9272727/Olal
 cd Olal/olal-os
 bash install.sh
 ```
+Baixa Debian + XFCE + Firefox + GPU (demora; ~1.5 GB).
 
-## Abrir o Olal
-
-### ✅ Recomendado — abre no navegador do celular (renderiza 100%)
-```bash
-cd ~
-./olal-web
-```
-Abre o Olal no Chrome do seu celular, com YouTube, IA e touch funcionando.
-**Dica:** no Chrome, menu (⋮) → **"Adicionar à tela inicial"** para abrir o
-Olal em tela cheia, como um app de verdade.
-
-### 🖥️ Tela cheia no Termux:X11 (Chromium nativo do Termux)
+## Abrir o desktop do Olal
 ```bash
 cd ~
 ./olal
 ```
-Depois abra o app **Termux:X11**. Usa o Chromium **nativo do Termux** (do
-`tur-repo`), que renderiza no Termux:X11 — diferente do Chromium do proot.
-Se mesmo assim ficar preto no seu aparelho, use o `./olal-web` acima.
+Depois **abra o app Termux:X11** → o desktop XFCE do Olal aparece em tela cheia.
 
-## O que funciona
-- **Olal AI (o coração da OS)** — conversa (LLM real) e **controla o sistema**:
-  "toca lofi no youtube", "abre a calculadora", "quanto é 17×23". Os comandos
-  funcionam **mesmo sem internet**.
-- **YouTube** — busca real e toca vídeo de verdade.
-- **Navegador, Terminal, Calc, Notas, Relógio, Paint, OLA-32 (nossa CPU),
-  Sistema, Rede, Config, Arquivos, Olal JS** — todos com o mesmo design e touch.
+### Confirme a GPU (importante!)
+No desktop, abra o **Terminal** (ou o atalho "Testar GPU") e rode:
+```bash
+gpu-test
+```
+Tem que aparecer **`virgl`** (não `llvmpipe`). Se aparecer virgl, o **Firefox
+e o Chromium renderizam**. Abra o **Firefox-ESR** ou o atalho **"Olal AI"**.
+
+> Se o navegador ainda ficar preto: seu chip pode precisar do caminho
+> zink+turnip (só Qualcomm/Adreno) — me avise o modelo do aparelho.
+
+## Modo garantido (sem desktop)
+Se quiser só a interface do Olal, sem o desktop XFCE:
+```bash
+cd ~ && ./olal-web
+```
+Abre o Olal no Chrome do próprio celular (renderiza 100%).
+
+## O que tem na distro
+- **Desktop XFCE real** (gerenciador de janelas, terminal, arquivos).
+- **Olal AI** — assistente que conversa (LLM) e controla o sistema.
+- **OLA-32** — nossa CPU própria (`ola32` no terminal).
+- **Firefox** acelerado por GPU, com YouTube.
+- Wallpaper e identidade do Olal.
