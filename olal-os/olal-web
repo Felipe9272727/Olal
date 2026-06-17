@@ -1,0 +1,20 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# ============================================================
+#  Olal OS - modo A PROVA DE BALAS: serve a interface e abre no
+#  NAVEGADOR DO PROPRIO CELULAR (Chrome real -> renderiza 100%,
+#  com YouTube, IA e touch). Nao depende de Termux:X11.
+# ============================================================
+SHELL_DIR="$HOME/.olal/shell"
+[ -d "$SHELL_DIR" ] || { echo "Olal nao instalado. Rode: bash install.sh"; exit 1; }
+
+pkill -f "http.server 8080" 2>/dev/null
+( cd "$SHELL_DIR" && python3 -m http.server 8080 >/dev/null 2>&1 & )
+sleep 1
+
+echo ">> Abrindo o Olal no navegador do seu celular..."
+echo "   Dica: no Chrome, menu (3 pontos) -> 'Adicionar a tela inicial'"
+echo "   para abrir o Olal em tela cheia como um app."
+
+termux-open-url "http://localhost:8080/index.html" 2>/dev/null \
+  || am start -a android.intent.action.VIEW -d "http://localhost:8080/index.html" 2>/dev/null \
+  || echo "Abra manualmente no navegador:  http://localhost:8080/index.html"
