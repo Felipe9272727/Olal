@@ -6,6 +6,16 @@ na interface do Olal** (a mesma cara, com todos os apps e touch), e os apps de
 **Navegador** e **YouTube** usam o **Chromium real** do celular, então o
 **YouTube toca de verdade**.
 
+## ⚡ Quer ver a interface AGORA (sem instalar nada)?
+Abra no Chrome do seu celular:
+
+**https://felipe9272727.github.io/olal-os/shell/**
+
+É a mesma interface do Olal (home, apps, touch, YouTube real, Olal AI com a
+rede neural). Bom para testar a cara antes de fazer a instalação completa do
+Linux abaixo. *(A instalação no Termux é o "OS de verdade", rodando isso em
+cima do Debian em tela cheia.)*
+
 ## O que você precisa instalar antes (2 apps, pelo F-Droid)
 1. **Termux** — https://f-droid.org/packages/com.termux/
 2. **Termux:X11** — https://f-droid.org/packages/com.termux.x11/
