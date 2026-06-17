@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Olal OS</title>
+<style>
+  :root{ --bg1:#16233D; --bg2:#0A0E16; }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; height:100%; overflow:hidden; background:#05070c;
+    font-family:system-ui,Segoe UI,Roboto,sans-serif; color:#e5e7eb; touch-action:manipulation; }
+  #screen{ position:fixed; inset:0; display:flex; flex-direction:column;
+    background:linear-gradient(160deg,var(--bg1),var(--bg2)); }
+  /* barra de status */
+  #status{ height:34px; display:flex; align-items:center; justify-content:space-between;
+    padding:0 16px; font-size:14px; background:#0b1220cc; }
+  #status .olal{ color:#2BD17A; font-weight:700; letter-spacing:1px; }
+  /* home */
+  #home{ flex:1; overflow-y:auto; padding:14px 12px 28px; }
+  #greet{ text-align:center; font-size:30px; font-weight:700; margin:14px 0 18px; color:#f1f5f9; }
+  #grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px 8px; }
+  .app{ display:flex; flex-direction:column; align-items:center; gap:6px; cursor:pointer; }
+  .ico{ width:62px; height:62px; border-radius:18px; display:flex; align-items:center;
+    justify-content:center; font-weight:800; font-size:22px; color:#fff;
+    box-shadow:0 6px 14px #0006; }
+  .app .lbl{ font-size:12px; color:#cbd5e1; }
+  .app:active .ico{ transform:scale(.92); }
+  /* tela de app */
+  #view{ position:absolute; inset:0; display:none; flex-direction:column; background:#0A0E16; }
+  #view.on{ display:flex; }
+  #bar{ height:50px; flex:0 0 auto; display:flex; align-items:center; gap:10px; padding:0 10px;
+    background:#0b1220; }
+  #bar button.back{ width:54px; height:34px; border:0; border-radius:8px; background:#1E293B;
+    color:#2BD17A; font-size:18px; font-weight:700; }
+  #bar .title{ font-size:18px; font-weight:600; color:#f1f5f9; }
+  #body{ flex:1; overflow:auto; position:relative; }
+  /* widgets reutilizaveis */
+  .pad{ padding:16px; }
+  .btn{ border:0; border-radius:12px; padding:12px 16px; font-size:16px; font-weight:600;
+    color:#fff; background:#2563EB; }
+  .btn.g{ background:#2BD17A; color:#06281a; } .btn.r{ background:#DC2626; } .btn.s{ background:#374151; }
+  input,textarea{ font-family:inherit; }
+  .field{ width:100%; padding:12px; border-radius:10px; border:1px solid #334155;
+    background:#111827; color:#e5e7eb; font-size:16px; }
+  iframe{ border:0; width:100%; height:100%; background:#fff; }
+</style>
+</head>
+<body>
+<div id="screen">
+  <div id="status"><span class="olal">olal</span><span id="clock">--:--</span></div>
+  <div id="home">
+    <div id="greet">Bom dia</div>
+    <div id="grid"></div>
+  </div>
+  <div id="view">
+    <div id="bar"><button class="back" onclick="closeApp()">&lt;</button><span class="title" id="vtitle"></span></div>
+    <div id="body"></div>
+  </div>
+</div>
+
+<script>
+/* ===== mesma lista/cores dos apps do nosso OS ===== */
+const APPS = [
+  {n:"Olal AI", c:"#2BD17A", i:"AI", f:appAI},
+  {n:"Terminal", c:"#3B82F6", i:">_", f:appTerm},
+  {n:"Calc", c:"#F59E0B", i:"=", f:appCalc},
+  {n:"Notas", c:"#A855F7", i:"N", f:appNotes},
+  {n:"Relogio", c:"#22C3DD", i:"O", f:appClock},
+  {n:"Config", c:"#94A3B8", i:"%", f:appConfig},
+  {n:"Arquivos", c:"#EAB308", i:"F", f:appFiles},
+  {n:"Paint", c:"#EF4444", i:"P", f:appPaint},
+  {n:"OLA-32", c:"#8B5CF6", i:"C", f:appOla32},
+  {n:"Sistema", c:"#10B981", i:"S", f:appSys},
+  {n:"Rede", c:"#0EA5E9", i:"@", f:appNet},
+  {n:"Navegador", c:"#F97316", i:"W", f:appBrowser},
+  {n:"Olal JS", c:"#FACC15", i:"JS", f:appJS},
+  {n:"YouTube", c:"#FF0000", i:"YT", f:appYT},
+];
+
+const grid=document.getElementById("grid");
+APPS.forEach((a,idx)=>{
+  const el=document.createElement("div"); el.className="app";
+  el.innerHTML=`<div class="ico" style="background:${a.c}">${a.i}</div><div class="lbl">${a.n}</div>`;
+  el.onclick=()=>openApp(idx); grid.appendChild(el);
+});
+
+const view=document.getElementById("view"), body=document.getElementById("body"), vtitle=document.getElementById("vtitle");
+function openApp(i){ vtitle.textContent=APPS[i].n; body.innerHTML=""; view.classList.add("on"); APPS[i].f(body); }
+function closeApp(){ view.classList.remove("on"); body.innerHTML=""; }
+
+/* relogio + saudacao */
+function tick(){
+  const d=new Date(); const hh=String(d.getHours()).padStart(2,"0"), mm=String(d.getMinutes()).padStart(2,"0");
+  document.getElementById("clock").textContent=hh+":"+mm;
+  const h=d.getHours(); document.getElementById("greet").textContent =
+    h<12?"Bom dia":h<18?"Boa tarde":"Boa noite";
+}
+setInterval(tick,1000); tick();
+
+/* ============================ APPS ============================ */
+
+/* ----- YouTube REAL (player de busca embutido, toca de verdade) ----- */
+function appYT(b){
+  b.innerHTML=`<div class="pad" style="padding:10px;display:flex;gap:8px">
+      <input class="field" id="ytq" placeholder="pesquisar no YouTube..." value="lofi hip hop">
+      <button class="btn r" id="ytgo">Buscar</button></div>
+    <div id="ytwrap" style="height:calc(100% - 64px)"></div>`;
+  const play=()=>{ const q=encodeURIComponent(document.getElementById("ytq").value||"musica");
+    document.getElementById("ytwrap").innerHTML=
+      `<iframe allow="autoplay; encrypted-media; fullscreen" allowfullscreen
+        src="https://www.youtube.com/embed/?listType=search&list=${q}&rel=0"></iframe>`; };
+  document.getElementById("ytgo").onclick=play; play();
+}
+
+/* ----- Navegador REAL (Chromium de verdade por baixo) ----- */
+function appBrowser(b){
+  b.innerHTML=`<div class="pad" style="padding:10px;display:flex;gap:8px">
+      <input class="field" id="bu" placeholder="site ou busca" value="wikipedia.org">
+      <button class="btn" id="bgo">Ir</button></div>
+    <div id="bwrap" style="height:calc(100% - 64px)"></div>`;
+  const go=()=>{ let u=document.getElementById("bu").value.trim();
+    if(!u) return;
+    if(!u.includes(".")) u="https://duckduckgo.com/?q="+encodeURIComponent(u);
+    else if(!u.startsWith("http")) u="https://"+u;
+    document.getElementById("bwrap").innerHTML=
+      `<iframe src="${u}"></iframe>
+       <div style="position:absolute;bottom:6px;right:10px;font-size:11px;color:#64748b">
+       se a pagina nao abrir, ela bloqueia ser embutida</div>`; };
+  document.getElementById("bgo").onclick=go; go();
+}
+
+/* ----- Calculadora ----- */
+function appCalc(b){
+  b.innerHTML=`<div class="pad"><div id="disp" style="text-align:right;font-size:40px;
+    background:#1E293B;border-radius:14px;padding:18px;margin-bottom:14px;min-height:30px">0</div>
+    <div id="keys" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px"></div></div>`;
+  let acc=0,cur="0",op=null,fresh=true;
+  const disp=()=>document.getElementById("disp").textContent=cur;
+  const K="7 8 9 / 4 5 6 * 1 2 3 - C 0 = +".split(" ");
+  const kd=document.getElementById("keys");
+  K.forEach(k=>{ const btn=document.createElement("button"); btn.className="btn s"; btn.textContent=k;
+    btn.style.height="62px"; btn.style.fontSize="22px";
+    if("+-*/".includes(k)) btn.style.background="#2563EB";
+    if(k==="=") btn.style.background="#2BD17A"; if(k==="C") btn.style.background="#DC2626";
+    btn.onclick=()=>{
+      if(/[0-9]/.test(k)){ cur=(fresh||cur==="0")?k:cur+k; fresh=false; }
+      else if(k==="C"){ acc=0;cur="0";op=null;fresh=true; }
+      else if(k==="="){ if(op){ cur=String(calc(acc,op,parseFloat(cur))); op=null; fresh=true; } }
+      else { if(op) acc=calc(acc,op,parseFloat(cur)); else acc=parseFloat(cur); op=k; fresh=true; }
+      disp(); };
+    kd.appendChild(btn); });
+  function calc(a,o,b){ return o==="+"?a+b:o==="-"?a-b:o==="*"?a*b:o==="/"?(b?a/b:0):b; }
+}
+
+/* ----- Notas ----- */
+function appNotes(b){
+  const saved=localStorage.getItem("olal_notes")||"";
+  b.innerHTML=`<div class="pad" style="height:100%"><textarea class="field" id="nt"
+    style="height:100%;resize:none" placeholder="escreva...">${saved}</textarea></div>`;
+  document.getElementById("nt").oninput=e=>localStorage.setItem("olal_notes",e.target.value);
+}
+
+/* ----- Relogio ----- */
+function appClock(b){
+  b.innerHTML=`<div class="pad" style="text-align:center;padding-top:120px">
+    <div id="bigt" style="font-size:64px;font-weight:700;color:#2BD17A"></div>
+    <div id="bigd" style="font-size:20px;color:#94a3b8;margin-top:10px"></div></div>`;
+  const u=()=>{ const d=new Date();
+    b.querySelector("#bigt").textContent=d.toLocaleTimeString();
+    b.querySelector("#bigd").textContent=d.toLocaleDateString(); };
+  u(); const iv=setInterval(()=>{ if(!view.classList.contains("on")) return clearInterval(iv); u(); },1000);
+}
+
+/* ----- Terminal ----- */
+function appTerm(b){
+  b.innerHTML=`<div class="pad" style="height:100%;display:flex;flex-direction:column">
+    <pre id="tout" style="flex:1;overflow:auto;color:#4ade80;margin:0;white-space:pre-wrap;font-size:14px">Olal OS terminal\nDigite 'help'.\n</pre>
+    <input class="field" id="tin" placeholder="comando..."></div>`;
+  const out=b.querySelector("#tout"), inp=b.querySelector("#tin");
+  inp.onkeydown=e=>{ if(e.key!=="Enter") return; const c=inp.value.trim(); inp.value="";
+    out.textContent+="olal$ "+c+"\n";
+    if(c==="help") out.textContent+="cmds: help clear date ver echo ls\n";
+    else if(c==="clear") out.textContent="";
+    else if(c==="ver") out.textContent+="Olal OS (Linux) v1.0\n";
+    else if(c==="date") out.textContent+=new Date().toString()+"\n";
+    else if(c==="ls") out.textContent+="notas.txt  sistema/  olal.ai\n";
+    else if(c.startsWith("echo ")) out.textContent+=c.slice(5)+"\n";
+    else if(c) out.textContent+="cmd nao encontrado: "+c+"\n";
+    out.scrollTop=out.scrollHeight; };
+}
+
+/* ----- Olal JS (motor real) ----- */
+function appJS(b){
+  b.innerHTML=`<div class="pad" style="height:100%;display:flex;flex-direction:column;gap:10px">
+    <textarea class="field" id="js" style="height:45%;resize:none">var s="Olal";
+print(s+" roda JavaScript!");
+function fib(n){return n<2?n:fib(n-1)+fib(n-2);}
+for(var i=0;i<10;i++) print(fib(i));</textarea>
+    <button class="btn g" id="run">Rodar</button>
+    <pre id="jo" style="flex:1;overflow:auto;background:#06140e;border-radius:10px;padding:10px;color:#6ee7b7;margin:0;white-space:pre-wrap"></pre></div>`;
+  b.querySelector("#run").onclick=()=>{ let o=""; const print=(...a)=>o+=a.join(" ")+"\n";
+    try{ new Function("print",b.querySelector("#js").value)(print); }
+    catch(e){ o+="erro: "+e.message; }
+    b.querySelector("#jo").textContent=o; };
+}
+
+/* ----- OLA-32 (nossa CPU, emulador em JS) ----- */
+function appOla32(b){
+  const code=["li r1,0","li r2,1","li r3,12","loop:","sys r1,2","add r6,r1,r2",
+    "add r1,r0,r2","add r2,r0,r6","addi r4,r4,1","bne r4,r3,loop","hlt"];
+  const out=runOla32(code);
+  b.innerHTML=`<div class="pad">
+    <div style="color:#c4b5fd">Arquitetura criada do zero (16 regs, RISC 32-bit)</div>
+    <div style="background:#140c24;border-radius:10px;padding:12px;margin:12px 0">
+      <div style="color:#94a3b8">rodando na nossa CPU:</div>
+      <div style="color:#6ee7b7;font-size:22px;font-weight:700">${out}</div></div>
+    <pre style="background:#140c24;border-radius:10px;padding:12px;color:#cbd5e1;font-size:13px">${code.join("\n")}</pre>
+    <div style="color:#94a3b8;font-size:13px">CPU, montador e emulador 100% nossos (arch/).</div></div>`;
+}
+function runOla32(prog){
+  const R=new Array(16).fill(0); const labels={}; const ins=[];
+  prog.forEach(l=>{ l=l.trim(); if(!l)return; if(l.endsWith(":")){labels[l.slice(0,-1)]=ins.length;return;} ins.push(l); });
+  let out=[],pc=0,guard=0;
+  const reg=s=>parseInt(s.replace("r",""));
+  while(pc<ins.length && guard++<10000){
+    const p=ins[pc].split(/[ ,]+/); const op=p[0]; pc++;
+    if(op==="li") R[reg(p[1])]=parseInt(p[2]);
+    else if(op==="add") R[reg(p[1])]=R[reg(p[2])]+R[reg(p[3])];
+    else if(op==="addi") R[reg(p[1])]=R[reg(p[2])]+parseInt(p[3]);
+    else if(op==="sys") out.push(R[reg(p[1])]);
+    else if(op==="bne"){ if(R[reg(p[1])]!==R[reg(p[2])]) pc=labels[p[3]]; }
+    else if(op==="hlt") break;
+  }
+  return out.join(" ");
+}
+
+/* ----- Paint ----- */
+function appPaint(b){
+  b.innerHTML=`<canvas id="cv" style="width:100%;height:calc(100% - 60px);background:#fff;touch-action:none"></canvas>
+    <div style="display:flex;gap:8px;padding:10px" id="pal"></div>`;
+  const cv=b.querySelector("#cv"); const ctx=cv.getContext("2d");
+  setTimeout(()=>{ cv.width=cv.clientWidth; cv.height=cv.clientHeight; },50);
+  let col="#EF4444",down=false;
+  ["#EF4444","#22C55E","#3B82F6","#EAB308","#111827","#fff"].forEach(c=>{
+    const d=document.createElement("button"); d.className="btn"; d.style.background=c; d.style.width="42px"; d.style.height="42px";
+    d.onclick=()=>col=c; b.querySelector("#pal").appendChild(d); });
+  const pos=e=>{ const r=cv.getBoundingClientRect(); const t=e.touches?e.touches[0]:e;
+    return {x:t.clientX-r.left,y:t.clientY-r.top}; };
+  const start=e=>{down=true;const p=pos(e);ctx.beginPath();ctx.moveTo(p.x,p.y);e.preventDefault();};
+  const move=e=>{ if(!down)return;const p=pos(e);ctx.strokeStyle=col;ctx.lineWidth=6;ctx.lineCap="round";
+    ctx.lineTo(p.x,p.y);ctx.stroke();e.preventDefault();};
+  const end=()=>down=false;
+  cv.addEventListener("mousedown",start);cv.addEventListener("mousemove",move);cv.addEventListener("mouseup",end);
+  cv.addEventListener("touchstart",start);cv.addEventListener("touchmove",move);cv.addEventListener("touchend",end);
+}
+
+/* ----- Olal AI (rede neural simples em JS) ----- */
+function appAI(b){
+  b.innerHTML=`<div class="pad" style="height:100%;display:flex;flex-direction:column;gap:10px">
+    <div id="chat" style="flex:1;overflow:auto;background:#0a1a14;border-radius:10px;padding:12px;color:#d1fae5">
+      Oi! Eu sou a Olal AI, rodando dentro do Olal. Fale comigo:<br><br></div>
+    <div style="display:flex;gap:8px"><input class="field" id="aiq" placeholder="diga algo...">
+    <button class="btn g" id="ais">&gt;</button></div></div>`;
+  const chat=b.querySelector("#chat"),q=b.querySelector("#aiq");
+  const reply=t=>{ const k=t.toLowerCase();
+    if(k.includes("oi")||k.includes("ola")) return "Ola! Como vai voce?";
+    if(k.includes("nome")) return "Eu sou a Olal AI, parte do Olal OS.";
+    if(k.includes("youtube")) return "Abra o app YouTube na tela inicial, ele toca de verdade!";
+    if(k.includes("tchau")) return "Ate mais!";
+    return "Interessante! Me conte mais sobre isso."; };
+  const send=()=>{ const t=q.value.trim(); if(!t)return; q.value="";
+    chat.innerHTML+=`<b>voce:</b> ${t}<br><b style="color:#2BD17A">olal:</b> ${reply(t)}<br><br>`;
+    chat.scrollTop=chat.scrollHeight; };
+  b.querySelector("#ais").onclick=send; q.onkeydown=e=>{if(e.key==="Enter")send();};
+}
+
+/* ----- Config / Sistema / Rede / Arquivos ----- */
+function appConfig(b){
+  b.innerHTML=`<div class="pad">
+    <div style="background:#1E293B;border-radius:14px;padding:18px;margin-bottom:14px">
+      <div style="font-size:26px;font-weight:700">Olal OS</div>
+      <div style="color:#94a3b8">versao 1.0 - sobre Linux real</div>
+      <div style="color:#6ee7b7">no seu celular, com touch</div></div>
+    <button class="btn r" style="width:100%" onclick="location.reload()">Reiniciar interface</button></div>`;
+}
+function appSys(b){
+  b.innerHTML=`<div class="pad">
+    <div style="background:#0e1a18;border-radius:12px;padding:16px;line-height:2">
+      <div>Plataforma: <b>${navigator.platform||"Linux"}</b></div>
+      <div>Nucleos (CPU): <b>${navigator.hardwareConcurrency||"?"}</b></div>
+      <div>Memoria (aprox): <b>${navigator.deviceMemory?navigator.deviceMemory+" GB":"?"}</b></div>
+      <div>Tela: <b>${screen.width}x${screen.height}</b></div>
+      <div>Online: <b>${navigator.onLine?"sim":"nao"}</b></div></div></div>`;
+}
+function appNet(b){
+  b.innerHTML=`<div class="pad"><div style="background:#0e1a2a;border-radius:12px;padding:16px;line-height:2">
+    <div>Status: <b style="color:#2BD17A">${navigator.onLine?"conectado":"offline"}</b></div>
+    <div>Tipo: <b>${(navigator.connection&&navigator.connection.effectiveType)||"?"}</b></div>
+    <div>User agent:</div><div style="font-size:12px;color:#94a3b8">${navigator.userAgent}</div></div></div>`;
+}
+function appFiles(b){
+  const f=[["notas.txt","1 KB"],["sistema/","-"],["olal.ai","98 KB"],["wallpaper.raw","1.5 MB"],["readme.md","2 KB"]];
+  b.innerHTML=`<div class="pad">`+f.map(x=>
+    `<div style="display:flex;align-items:center;gap:12px;background:#1E293B;border-radius:12px;padding:14px;margin-bottom:10px">
+      <div style="width:40px;height:40px;border-radius:8px;background:#2563EB;display:flex;align-items:center;justify-content:center;font-weight:700">F</div>
+      <div><div>${x[0]}</div><div style="color:#94a3b8;font-size:12px">${x[1]}</div></div></div>`).join("")+`</div>`;
+}
+</script>
+</body>
+</html>
