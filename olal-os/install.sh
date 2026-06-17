@@ -1,44 +1,47 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # ============================================================
-#  Olal OS - instalador para Android (Termux, SEM root).
-#  Usa o Chromium NATIVO do Termux (tur-repo), que renderiza no
-#  Termux:X11 - resolve a tela preta do Chromium do proot no arm64.
-#  NAO apaga o Android. NAO precisa de root.
+#  Olal OS - instalador (Android/Termux, SEM root).
+#  Monta uma DISTRO de verdade: Debian + desktop XFCE no
+#  Termux:X11, com aceleracao de GPU (virgl) e a cara do Olal.
+#  Inclui tambem o modo "olal-web" (a prova de balas).
 # ============================================================
 set -e
 SCRIPTDIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "==================================================="
-echo "   Olal OS  -  instalando no seu celular"
+echo "   Olal OS  -  distro Debian no seu celular"
 echo "==================================================="
 
-echo ">> [1/3] atualizando o Termux e habilitando repositorios..."
+echo ">> [1/4] Termux: proot, X11, audio, GPU..."
 yes | pkg update || true
-pkg install -y x11-repo tur-repo
+pkg install -y proot-distro x11-repo
 pkg update -y || true
+pkg install -y termux-x11-nightly pulseaudio python
+# aceleracao de GPU (virgl) - melhora/destrava a renderizacao do navegador
+pkg install -y virglrenderer-android 2>/dev/null || pkg install -y mesa 2>/dev/null || true
 
-echo ">> [2/3] instalando Chromium nativo + tela + audio (pode demorar)..."
-pkg install -y termux-x11-nightly chromium python pulseaudio || {
-  echo "   AVISO: algum pacote falhou. Tente de novo com boa conexao."; }
+echo ">> [2/4] instalando a base Debian (demora)..."
+proot-distro install debian || echo "   (debian ja instalado)"
 
-echo ">> [3/3] instalando a interface do Olal..."
+echo ">> [3/4] montando o desktop XFCE + apps do Olal dentro do Debian..."
+proot-distro login debian -- bash -s < "$SCRIPTDIR/setup-desktop.sh"
+
+echo ">> [4/4] instalando os atalhos..."
 mkdir -p "$HOME/.olal"
-rm -rf "$HOME/.olal/shell"
-cp -r "$SCRIPTDIR/shell" "$HOME/.olal/shell"
+rm -rf "$HOME/.olal/shell"; cp -r "$SCRIPTDIR/shell" "$HOME/.olal/shell"
 cp "$SCRIPTDIR/olal"     "$HOME/olal";     chmod +x "$HOME/olal"
 cp "$SCRIPTDIR/olal-web" "$HOME/olal-web"; chmod +x "$HOME/olal-web"
 
 echo ""
 echo "==================================================="
-echo "   PRONTO! Duas formas de abrir o Olal:"
+echo "   PRONTO!"
 echo ""
-echo "   ./olal-web   -> abre no navegador do celular"
-echo "                   (RECOMENDADO: renderiza 100%, com"
-echo "                    YouTube, IA e touch)"
+echo "   ./olal      -> desktop Debian XFCE (tela cheia no"
+echo "                  Termux:X11, com GPU). Abra o app"
+echo "                  Termux:X11 depois de rodar."
 echo ""
-echo "   ./olal       -> tela cheia no Termux:X11 (Chromium"
-echo "                   nativo). Precisa do app Termux:X11."
+echo "   ./olal-web  -> abre so a interface do Olal no Chrome"
+echo "                  do celular (sempre funciona)."
 echo ""
-echo "   Instale tambem o app 'Termux:X11' pelo F-Droid se for"
-echo "   usar o modo tela cheia."
+echo "   Instale o app 'Termux:X11' (F-Droid) para o desktop."
 echo "==================================================="

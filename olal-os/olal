@@ -1,22 +1,20 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # ============================================================
-#  Olal OS - inicia em TELA CHEIA usando o Chromium NATIVO do
-#  Termux (renderiza no Termux:X11, ao contrario do Chromium do
-#  Debian/proot que fica preto no arm64).
+#  Olal OS - inicia o desktop Debian XFCE no Termux:X11, com
+#  aceleracao de GPU (virgl) para o navegador renderizar.
 # ============================================================
-SHELL_DIR="$HOME/.olal/shell"
-[ -d "$SHELL_DIR" ] || { echo "Olal nao instalado. Rode: bash install.sh"; exit 1; }
 
-# audio (para o YouTube ter som)
+# 1) audio (YouTube com som)
 pulseaudio --start --exit-idle-time=-1 \
   --load="module-native-protocol-tcp auth-ip-acl=127.0.0.1 auth-anonymous=1" 2>/dev/null || true
 
-# serve a interface localmente
-pkill -f "http.server 8080" 2>/dev/null
-( cd "$SHELL_DIR" && python3 -m http.server 8080 >/dev/null 2>&1 & )
-sleep 1
+# 2) servidor de GPU virtual (virgl) -> OpenGL acelerado dentro do proot
+pkill -f virgl_test_server 2>/dev/null
+if command -v virgl_test_server_android >/dev/null 2>&1; then
+  MESA_NO_ERROR=1 virgl_test_server_android --use-egl-surfaceless >/dev/null 2>&1 &
+fi
 
-# servidor de tela (Termux:X11)
+# 3) servidor de tela (Termux:X11). socket no $TMPDIR p/ casar com --shared-tmp
 pkill -f "termux-x11 :0" 2>/dev/null
 export TMPDIR="$PREFIX/tmp"; mkdir -p "$TMPDIR"
 termux-x11 :0 -ac >/dev/null 2>&1 &
@@ -24,13 +22,18 @@ sleep 2
 am start --user 0 -n com.termux.x11/com.termux.x11.MainActivity >/dev/null 2>&1 || true
 sleep 2
 
-echo ">> Abra o app Termux:X11 para ver o Olal em tela cheia."
-echo "   (se ficar preto, use ./olal-web - abre no navegador do celular)"
+echo ">> Abra o app Termux:X11 para ver o desktop do Olal."
 
-# Chromium NATIVO do Termux, em tela cheia no Termux:X11
-DISPLAY=:0 PULSE_SERVER=127.0.0.1 chromium \
-  --no-sandbox --kiosk --start-fullscreen \
-  --autoplay-policy=no-user-gesture-required \
-  --force-device-scale-factor=1 \
-  --user-data-dir="$HOME/.olal/chrome" \
-  http://localhost:8080/index.html
+# 4) sobe o desktop XFCE dentro do Debian, com GPU acelerada e dbus
+proot-distro login debian --shared-tmp -- bash -lc '
+  mkdir -p /run/dbus
+  export DISPLAY=:0
+  export PULSE_SERVER=127.0.0.1
+  export GALLIUM_DRIVER=virpipe
+  export MESA_GL_VERSION_OVERRIDE=4.0
+  export MESA_GLES_VERSION_OVERRIDE=3.2
+  export OLAL_BROWSER=firefox-esr
+  export MOZ_X11_EGL=1
+  export MOZ_FAKE_NO_SANDBOX=1
+  dbus-launch --exit-with-session startxfce4
+'
