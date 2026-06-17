@@ -1,0 +1,36 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# ============================================================
+#  Olal OS - inicia em TELA CHEIA usando o Chromium NATIVO do
+#  Termux (renderiza no Termux:X11, ao contrario do Chromium do
+#  Debian/proot que fica preto no arm64).
+# ============================================================
+SHELL_DIR="$HOME/.olal/shell"
+[ -d "$SHELL_DIR" ] || { echo "Olal nao instalado. Rode: bash install.sh"; exit 1; }
+
+# audio (para o YouTube ter som)
+pulseaudio --start --exit-idle-time=-1 \
+  --load="module-native-protocol-tcp auth-ip-acl=127.0.0.1 auth-anonymous=1" 2>/dev/null || true
+
+# serve a interface localmente
+pkill -f "http.server 8080" 2>/dev/null
+( cd "$SHELL_DIR" && python3 -m http.server 8080 >/dev/null 2>&1 & )
+sleep 1
+
+# servidor de tela (Termux:X11)
+pkill -f "termux-x11 :0" 2>/dev/null
+export TMPDIR="$PREFIX/tmp"; mkdir -p "$TMPDIR"
+termux-x11 :0 -ac >/dev/null 2>&1 &
+sleep 2
+am start --user 0 -n com.termux.x11/com.termux.x11.MainActivity >/dev/null 2>&1 || true
+sleep 2
+
+echo ">> Abra o app Termux:X11 para ver o Olal em tela cheia."
+echo "   (se ficar preto, use ./olal-web - abre no navegador do celular)"
+
+# Chromium NATIVO do Termux, em tela cheia no Termux:X11
+DISPLAY=:0 PULSE_SERVER=127.0.0.1 chromium \
+  --no-sandbox --kiosk --start-fullscreen \
+  --autoplay-policy=no-user-gesture-required \
+  --force-device-scale-factor=1 \
+  --user-data-dir="$HOME/.olal/chrome" \
+  http://localhost:8080/index.html
