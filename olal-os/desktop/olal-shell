@@ -7,8 +7,31 @@ pkill -f "http.server 8080" 2>/dev/null
 sleep 1
 URL="http://localhost:8080/index.html"
 
+# ---- profile do Firefox pre-configurado: vai DIRETO pra interface, sem dialogs
+PROF="$HOME/.olal-ff"
+mkdir -p "$PROF"
+cat > "$PROF/user.js" <<'JS'
+user_pref("browser.shell.checkDefaultBrowser", false);
+user_pref("browser.startup.homepage_override.mstone", "ignore");
+user_pref("startup.homepage_welcome_url", "");
+user_pref("startup.homepage_welcome_url.additional", "");
+user_pref("browser.aboutwelcome.enabled", false);
+user_pref("browser.startup.firstrunSkipsHomepage", true);
+user_pref("datareporting.policy.dataSubmissionEnabled", false);
+user_pref("datareporting.policy.firstRunURL", "");
+user_pref("toolkit.telemetry.reportingpolicy.firstRun", false);
+user_pref("trailhead.firstrun.didSeeAboutWelcome", true);
+user_pref("browser.disableResetPrompt", true);
+user_pref("browser.tabs.warnOnClose", false);
+user_pref("browser.warnOnQuit", false);
+user_pref("media.autoplay.default", 0);
+user_pref("media.autoplay.blocking_policy", 0);
+JS
+
+ff_run(){ export MOZ_FAKE_NO_SANDBOX=1 MOZ_DISABLE_RDD_SANDBOX=1
+  exec "$1" --kiosk --profile "$PROF" --no-remote "$URL"; }
+
 if [ "$1" = "chromium" ] && command -v chromium >/dev/null 2>&1; then
-  # Chromium com GPU real da Adreno (Turnip via zink)
   exec env MESA_LOADER_DRIVER_OVERRIDE=zink TU_DEBUG=noconform \
     chromium --no-sandbox --kiosk --ozone-platform=x11 \
     --enable-features=UseOzonePlatform --use-gl=egl \
@@ -16,13 +39,9 @@ if [ "$1" = "chromium" ] && command -v chromium >/dev/null 2>&1; then
     --user-data-dir="$HOME/.olal-chrome" "$URL"
 fi
 
-if command -v firefox-esr >/dev/null 2>&1; then
-  export MOZ_FAKE_NO_SANDBOX=1 MOZ_DISABLE_RDD_SANDBOX=1
-  exec firefox-esr --kiosk "$URL"
-elif command -v firefox >/dev/null 2>&1; then
-  export MOZ_FAKE_NO_SANDBOX=1
-  exec firefox --kiosk "$URL"
-elif command -v chromium >/dev/null 2>&1; then
+if   command -v firefox-esr >/dev/null 2>&1; then ff_run firefox-esr
+elif command -v firefox     >/dev/null 2>&1; then ff_run firefox
+elif command -v chromium    >/dev/null 2>&1; then
   exec env MESA_LOADER_DRIVER_OVERRIDE=zink TU_DEBUG=noconform \
     chromium --no-sandbox --kiosk --ozone-platform=x11 --use-gl=egl \
     --user-data-dir="$HOME/.olal-chrome" "$URL"

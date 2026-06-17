@@ -26,7 +26,9 @@ cp /tmp/olal-src/olal-os/desktop/ola32.desktop   "$DEB/usr/share/applications/" 
 echo ">> compilando OLA-32 e configurando dentro do Debian..."
 proot-distro login debian --shared-tmp -- /bin/bash -c '
   apt-get update -y >/dev/null 2>&1 || true
-  apt-get install -y --no-install-recommends python3 chromium build-essential >/dev/null 2>&1 || true
+  # firefox-esr e o navegador padrao (render comprovado por software/GTK);
+  # chromium fica como alternativa acelerada por zink/Turnip.
+  apt-get install -y --no-install-recommends python3 firefox-esr chromium build-essential >/dev/null 2>&1 || true
   gcc -O2 /opt/olal/oemu.c -o /usr/local/bin/ola32 2>/dev/null || true
   # wallpaper do Olal
   mkdir -p ~/.config/autostart
