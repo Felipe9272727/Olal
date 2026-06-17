@@ -41,7 +41,7 @@ try {
         wasm_path: "lib/v86.wasm",
         bios:     { url: "lib/seabios.bin" },
         vga_bios: { url: "lib/vgabios.bin" },
-        fda:      { url: "olal.img?v=scroll" },
+        fda:      { url: "olal.img?v=visual" },
         net_device: { type: "ne2k" },   /* sem relay publico confiavel hoje (rede so com gateway proprio) */
         memory_size: 64 * 1024 * 1024,
         vga_memory_size: 16 * 1024 * 1024,
@@ -186,46 +186,65 @@ try {
     });
 })();
 
-/* ---------- PONTE WEB CONFIAVEL: o navegador do OS pede uma URL escrevendo
-   na RAM (WBASE), este JS busca de verdade via r.jina.ai e devolve o texto
-   limpo para a RAM. Mesmo mecanismo do toque/imagens, que ja funciona no
-   celular - sem depender da pilha TCP emulada. ---------- */
+/* ---------- PONTE WEB: o navegador do OS pede uma URL escrevendo na RAM.
+   Modo VISUAL (mode=1): renderiza a pagina num motor real (Chromium via
+   image.thum.io) e devolve os PIXELS do screenshot -> navegador grafico.
+   Modo TEXTO  (mode=0): le a pagina via r.jina.ai e devolve o texto+links.
+   Mesmo mecanismo do toque/imagens, que ja funciona no celular. ---------- */
 (function installWeb(){
-    const WBASE = 0x1400000;
+    const WBASE = 0x1400000, WSHOT = 0x1800000;
+    const MAXH = 4000;                         /* altura maxima do screenshot */
     function wU32b(addr, v){ emulator.write_memory(new Uint8Array([v&255,(v>>>8)&255,(v>>>16)&255,(v>>>24)&255]), addr); }
     function rU32(addr){ const b=emulator.read_memory(addr,4); return (b[0]|(b[1]<<8)|(b[2]<<16)|(b[3]<<24))>>>0; }
     async function jget(url){
         const target = url.indexOf("http")===0 ? url : "https://"+url;
         const ac=new AbortController(); const tm=setTimeout(()=>ac.abort(),20000);
+        try{ const r=await fetch("https://r.jina.ai/"+target,{signal:ac.signal}); return await r.text(); }
+        finally { clearTimeout(tm); }
+    }
+    /* renderiza a pagina e devolve {w,h,rgb} dos pixels (RGB 3 bytes/pixel) */
+    async function shot(url){
+        const target = url.indexOf("http")===0 ? url : "https://"+url;
+        const ac=new AbortController(); const tm=setTimeout(()=>ac.abort(),25000);
         try{
-            const r=await fetch("https://r.jina.ai/"+target,{signal:ac.signal});
-            return await r.text();
+            const r=await fetch("https://image.thum.io/get/width/480/fullpage/"+target,{signal:ac.signal});
+            const blob=await r.blob();
+            const bmp=await createImageBitmap(blob);
+            let w=Math.min(bmp.width,480), h=Math.min(bmp.height,MAXH);
+            const cv=new OffscreenCanvas(w,h); const cx=cv.getContext("2d");
+            cx.drawImage(bmp,0,0);
+            const d=cx.getImageData(0,0,w,h).data;
+            const rgb=new Uint8Array(w*h*3);
+            for(let i=0,j=0;i<d.length;i+=4){ rgb[j++]=d[i]; rgb[j++]=d[i+1]; rgb[j++]=d[i+2]; }
+            return {w,h,rgb};
         } finally { clearTimeout(tm); }
     }
     let busy=false, last=0;
     setInterval(async ()=>{
         if(!emulator || busy) return;
-        let req, done;
-        try{ req=rU32(WBASE); done=rU32(WBASE+4); }catch(e){ return; }
+        let req, done, mode;
+        try{ req=rU32(WBASE); done=rU32(WBASE+4); mode=rU32(WBASE+20); }catch(e){ return; }
         if(req===0 || req===done || req===last) return;
         last=req; busy=true;
-        let text="", status=1;
+        let status=1;
         try{
-            const ub=emulator.read_memory(WBASE+16,256); let url="";
-            for(let i=0;i<256 && ub[i];i++) url+=String.fromCharCode(ub[i]);
-            console.log("[web] buscando "+url);
-            text=await jget(url);
-            console.log("[web] recebeu "+text.length+" bytes");
-        }catch(e){ status=2; text="erro: "+((e&&e.message)||e); console.log("[web] falhou: "+e); }
-        try{
-            const n=Math.min(text.length,23000);
-            const bytes=new Uint8Array(n+1);
-            for(let i=0;i<n;i++) bytes[i]=text.charCodeAt(i)&255; bytes[n]=0;
-            emulator.write_memory(bytes, WBASE+512);
-            wU32b(WBASE+12, n);
-            wU32b(WBASE+8, status);
-            wU32b(WBASE+4, req);             /* done = req: pronto */
-        }catch(e){ console.log("[web] erro ao escrever: "+e); }
+            const ub=emulator.read_memory(WBASE+32,224); let url="";
+            for(let i=0;i<224 && ub[i];i++) url+=String.fromCharCode(ub[i]);
+            console.log("[web] "+(mode?"visual":"texto")+" "+url);
+            if(mode===1){
+                const s=await shot(url);
+                emulator.write_memory(s.rgb, WSHOT);
+                wU32b(WBASE+12, s.w); wU32b(WBASE+16, s.h);
+                console.log("[web] screenshot "+s.w+"x"+s.h);
+            } else {
+                const text=await jget(url);
+                const n=Math.min(text.length,23000); const bytes=new Uint8Array(n+1);
+                for(let i=0;i<n;i++) bytes[i]=text.charCodeAt(i)&255; bytes[n]=0;
+                emulator.write_memory(bytes, WBASE+512);
+                console.log("[web] texto "+n+"b");
+            }
+        }catch(e){ status=2; console.log("[web] falhou: "+e); }
+        try{ wU32b(WBASE+8, status); wU32b(WBASE+4, req); }catch(e){}
         busy=false;
     }, 150);
 })();
