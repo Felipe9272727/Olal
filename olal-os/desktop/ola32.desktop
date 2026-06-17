@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=OLA-32 CPU
+Comment=Nossa arquitetura de CPU rodando
+Exec=xfce4-terminal --title="OLA-32" -e "bash -lc 'ola32; echo; read -p pressione_enter'"
+Icon=utilities-terminal
+Terminal=false
+Categories=Development;

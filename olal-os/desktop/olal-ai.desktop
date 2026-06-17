@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Olal AI
+Comment=Assistente de IA que controla o Olal
+Exec=olal-shell
+Icon=/opt/olal/icon.png
+Terminal=false
+Categories=Network;
