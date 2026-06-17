@@ -9,15 +9,17 @@ export DEBIAN_FRONTEND=noninteractive
 echo ">> atualizando o Debian..."
 apt-get update -y; apt-get upgrade -y || true
 
-echo ">> instalando o desktop XFCE + Chromium + GPU (Turnip/zink)..."
+echo ">> instalando o desktop XFCE + navegadores + GPU (Turnip/zink)..."
 apt-get install -y --no-install-recommends \
     xfce4 xfce4-terminal xfce4-goodies xfdesktop4 \
-    chromium \
+    firefox-esr chromium \
     dbus-x11 x11-xserver-utils \
     mesa-utils mesa-vulkan-drivers libvulkan1 vulkan-tools libgl1-mesa-dri \
     pulseaudio-utils \
     python3 git build-essential nano wget curl \
     fonts-dejavu fonts-noto-core fonts-noto-color-emoji || true
+# o Firefox renderiza pelo mesmo caminho GTK/X11 do desktop (mais confiavel
+# que o Chromium); o Chromium fica como alternativa acelerada por zink.
 
 # ---------- identidade e apps do Olal ----------
 mkdir -p /opt/olal
@@ -53,6 +55,27 @@ echo "== Navegador / zink (deve dizer 'zink (Turnip Adreno...)') =="
 MESA_LOADER_DRIVER_OVERRIDE=zink TU_DEBUG=noconform glxinfo 2>/dev/null | grep -i "OpenGL renderer"
 SH
 chmod +x /usr/local/bin/gpu-test
+
+# diagnostico completo do Olal: checa cada componente (PASS/FAIL)
+cat > /usr/local/bin/olal-doctor <<'SH'
+#!/bin/bash
+ok(){ echo -e "  [\e[32mOK\e[0m]  $1"; }
+no(){ echo -e "  [\e[31mFALHA\e[0m] $1"; }
+echo "===== Olal doctor ====="
+[ -n "$DISPLAY" ] && xdpyinfo >/dev/null 2>&1 && ok "tela X11 ($DISPLAY)" || no "tela X11 - rode dentro do desktop"
+vulkaninfo 2>/dev/null | grep -iq adreno && ok "GPU Vulkan: Turnip/Adreno" || no "Vulkan Turnip (vai usar software)"
+GALLIUM_DRIVER=virpipe glxinfo 2>/dev/null | grep -i "OpenGL renderer" | grep -iq virgl && ok "GL desktop: virgl" || no "GL desktop (virgl)"
+MESA_LOADER_DRIVER_OVERRIDE=zink glxinfo 2>/dev/null | grep -i "OpenGL renderer" | grep -iq zink && ok "GL navegador: zink/Turnip" || no "GL navegador (zink)"
+command -v firefox-esr >/dev/null && ok "Firefox instalado" || no "Firefox"
+command -v chromium >/dev/null && ok "Chromium instalado" || no "Chromium"
+command -v python3 >/dev/null && ok "python3" || no "python3"
+[ -f /opt/olal/shell/index.html ] && ok "interface do Olal presente" || no "shell do Olal (/opt/olal/shell)"
+command -v ola32 >/dev/null && ok "OLA-32 (nossa CPU)" || no "OLA-32"
+echo "======================="
+echo "Para abrir a interface:  olal-shell   (ou  olal-shell chromium)"
+SH
+chmod +x /usr/local/bin/olal-doctor
+
 cat > /usr/share/applications/gpu-test.desktop <<'EOF'
 [Desktop Entry]
 Version=1.0
