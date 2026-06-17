@@ -1,11 +1,13 @@
 #!/bin/bash
-# Olal AI / interface: serve o shell e abre no Firefox (com EGL/virgl).
+# Abre a interface do Olal (a IA + apps) no Chromium com aceleracao ZINK
+# (Turnip = GPU real da Adreno). E isso que faz a tela RENDERIZAR no arm64.
 pkill -f "http.server 8080" 2>/dev/null
 ( cd /opt/olal/shell && python3 -m http.server 8080 >/dev/null 2>&1 & )
 sleep 1
-export MOZ_X11_EGL=1
-export MOZ_FAKE_NO_SANDBOX=1
-export MOZ_DISABLE_RDD_SANDBOX=1
-export GALLIUM_DRIVER=virpipe
-export MESA_GL_VERSION_OVERRIDE=4.0
-exec firefox-esr --kiosk http://localhost:8080/index.html
+exec env MESA_LOADER_DRIVER_OVERRIDE=zink TU_DEBUG=noconform \
+  chromium --no-sandbox --kiosk \
+  --ozone-platform=x11 --enable-features=UseOzonePlatform \
+  --use-gl=egl \
+  --autoplay-policy=no-user-gesture-required \
+  --user-data-dir="$HOME/.olal-chrome" \
+  http://localhost:8080/index.html
