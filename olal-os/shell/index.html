@@ -99,17 +99,48 @@ setInterval(tick,1000); tick();
 
 /* ============================ APPS ============================ */
 
-/* ----- YouTube REAL (player de busca embutido, toca de verdade) ----- */
+/* ----- YouTube REAL: busca de verdade + player por ID (toca de verdade) -----
+   O embed por listType=search foi descontinuado pelo YouTube; entao buscamos
+   os resultados reais (via r.jina.ai) e tocamos pelo ID, que e confiavel. */
 function appYT(b){
-  b.innerHTML=`<div class="pad" style="padding:10px;display:flex;gap:8px">
+  b.innerHTML=`<div style="padding:10px;display:flex;gap:8px">
       <input class="field" id="ytq" placeholder="pesquisar no YouTube..." value="lofi hip hop">
       <button class="btn r" id="ytgo">Buscar</button></div>
-    <div id="ytwrap" style="height:calc(100% - 64px)"></div>`;
-  const play=()=>{ const q=encodeURIComponent(document.getElementById("ytq").value||"musica");
-    document.getElementById("ytwrap").innerHTML=
-      `<iframe allow="autoplay; encrypted-media; fullscreen" allowfullscreen
-        src="https://www.youtube.com/embed/?listType=search&list=${q}&rel=0"></iframe>`; };
-  document.getElementById("ytgo").onclick=play; play();
+    <div id="ytplayer"></div>
+    <div id="ytlist" style="overflow:auto"></div>`;
+  const list=b.querySelector("#ytlist"), player=b.querySelector("#ytplayer"), q=b.querySelector("#ytq");
+  function play(id){
+    player.innerHTML=`<iframe style="width:100%;height:230px;background:#000"
+      allow="autoplay; encrypted-media; fullscreen" allowfullscreen
+      src="https://www.youtube.com/embed/${id}?autoplay=1&rel=0"></iframe>`;
+  }
+  async function search(){
+    const term=q.value.trim(); if(!term) return;
+    player.innerHTML=""; list.innerHTML='<div style="padding:20px;color:#94a3b8">buscando...</div>';
+    try{
+      const r=await fetch("https://r.jina.ai/https://www.youtube.com/results?search_query="+encodeURIComponent(term));
+      const t=await r.text();
+      const seen=new Set(), items=[]; const re=/\[([^\]]{4,90})\]\([^)]*watch\?v=([\w-]{11})/g; let m;
+      while((m=re.exec(t)) && items.length<25){
+        const title=m[1].trim(), id=m[2];
+        if(seen.has(id)) continue; seen.add(id);
+        if(/^(mix|https?|www\.|\d+:\d+|)/i.test(title)||title.length<4) continue;
+        items.push({title,id});
+      }
+      if(!items.length){ list.innerHTML='<div style="padding:20px;color:#ef4444">nada encontrado (sem internet?)</div>'; return; }
+      list.innerHTML=items.map(v=>
+        `<div class="ytrow" data-id="${v.id}" style="display:flex;gap:10px;align-items:flex-start;padding:10px;border-bottom:1px solid #1e293b;cursor:pointer">
+          <img loading="lazy" src="https://i.ytimg.com/vi/${v.id}/mqdefault.jpg"
+            style="width:130px;height:73px;border-radius:8px;object-fit:cover;background:#222;flex:0 0 auto">
+          <div style="font-size:14px;line-height:1.35">${v.title}</div></div>`).join("");
+      list.querySelectorAll(".ytrow").forEach(row=>row.onclick=()=>{ play(row.dataset.id);
+        player.scrollIntoView({block:"start"}); });
+      player.innerHTML='<div style="padding:14px;color:#94a3b8;text-align:center">toque num video para tocar</div>';
+    }catch(e){ list.innerHTML='<div style="padding:20px;color:#ef4444">erro: '+e.message+'</div>'; }
+  }
+  b.querySelector("#ytgo").onclick=search;
+  q.addEventListener("keydown",e=>{ if(e.key==="Enter") search(); });
+  search();
 }
 
 /* ----- Navegador REAL (Chromium de verdade por baixo) ----- */
