@@ -45,8 +45,8 @@ command -v chromium >/dev/null 2>&1 || CHROME=chromium-browser
 cat > /usr/local/bin/olal-shell <<EOF
 #!/bin/bash
 export DISPLAY=:0
-export PULSE_SERVER=127.0.0.1
-export XDG_RUNTIME_DIR=/tmp/runtime-olal
+export PULSE_SERVER=tcp:127.0.0.1
+export XDG_RUNTIME_DIR=/run/olal
 mkdir -p \$XDG_RUNTIME_DIR; chmod 700 \$XDG_RUNTIME_DIR
 # serve a interface por HTTP local (o YouTube embed exige origem http, nao file://)
 ( cd /opt/olal/shell && python3 -m http.server 8080 >/dev/null 2>&1 & )
@@ -55,8 +55,8 @@ sleep 1
 openbox &
 sleep 1
 # Olal em tela cheia (quiosque). Motor real -> YouTube toca de verdade.
-exec $CHROME --kiosk --no-sandbox --no-zygote --disable-dev-shm-usage \\
-  --disable-gpu --use-gl=swiftshader \\
+exec $CHROME --kiosk --no-sandbox --disable-setuid-sandbox --no-zygote \\
+  --disable-dev-shm-usage --disable-gpu --use-gl=swiftshader \\
   --autoplay-policy=no-user-gesture-required \\
   --start-fullscreen --force-device-scale-factor=1 \\
   --user-data-dir=/root/.olal-chrome \\

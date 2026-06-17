@@ -58,7 +58,47 @@
   </div>
 </div>
 
+<script src="model.js"></script>
 <script>
+/* ===== rede neural real do Olal (MLP char-level, pesos em model.js) ===== */
+const AI_SEEDS=[
+  "a gente a entender melhor o mundo ","o sistema operacional cuida da tela ",
+  "eu sou uma rede neural pequena que ","a tecnologia muda o mundo e nos ajuda ",
+  "vamos conversar mais sobre o seu dia ","o computador e uma maquina que segue ",
+  "a curiosidade move o ser humano a ","estudar um pouco a cada dia faz uma ",
+  "a leitura abre portas para mundos novos ","um amigo de verdade escuta e apoia ",
+  "respira fundo vai dar tudo certo um ","ajudar o proximo deixa o mundo um lugar ",
+  "acredite mais no seu potencial voce e ","a vida e feita de pequenos momentos que "];
+function aiIdx(c){ const i=M.VOCAB.indexOf((c||" ").toLowerCase()); return i<0?0:i; }
+function aiForward(ctx){
+  const ce=M.CTX*M.EMB, e=new Float32Array(ce);
+  for(let j=0;j<M.CTX;j++) for(let k=0;k<M.EMB;k++) e[j*M.EMB+k]=M.EMBW[ctx[j]*M.EMB+k];
+  const h=new Float32Array(M.HID);
+  for(let i=0;i<M.HID;i++){ let s=M.B1[i]; for(let n=0;n<ce;n++) s+=e[n]*M.W1[n*M.HID+i]; h[i]=Math.tanh(s); }
+  const lo=new Float32Array(M.V);
+  for(let o=0;o<M.V;o++){ let s=M.B2[o]; for(let i=0;i<M.HID;i++) s+=h[i]*M.W2[i*M.V+o]; lo[o]=s; }
+  return lo;
+}
+function aiGenerate(prompt,maxlen=150){
+  if(typeof M==="undefined") return "(modelo nao carregou)";
+  let hsh=0; for(let i=0;i<prompt.length;i++) hsh=(hsh*31+prompt.charCodeAt(i))>>>0;
+  const seed=AI_SEEDS[(hsh+(Math.random()*1e9|0))%AI_SEEDS.length];
+  const ctx=[]; for(let i=0;i<M.CTX;i++){ const p=seed.length-M.CTX+i; ctx.push(aiIdx(p>=0?seed[p]:" ")); }
+  let out="",temp=0.5;
+  for(let n=0;n<maxlen;n++){
+    const lo=aiForward(ctx); let mx=lo[0];
+    for(let i=1;i<M.V;i++) if(lo[i]>mx) mx=lo[i];
+    let sum=0; const ps=new Float32Array(M.V);
+    for(let i=0;i<M.V;i++){ ps[i]=Math.exp((lo[i]-mx)/temp); sum+=ps[i]; }
+    let r=Math.random()*sum, pick=M.V-1;
+    for(let i=0;i<M.V;i++){ r-=ps[i]; if(r<=0){ pick=i; break; } }
+    const c=M.VOCAB[pick]; out+=c;
+    for(let i=0;i<M.CTX-1;i++) ctx[i]=ctx[i+1]; ctx[M.CTX-1]=pick;
+    if((c==="."||c==="?")&&n>24) break;
+  }
+  return out.trim();
+}
+
 /* ===== mesma lista/cores dos apps do nosso OS ===== */
 const APPS = [
   {n:"Olal AI", c:"#2BD17A", i:"AI", f:appAI},
@@ -99,17 +139,48 @@ setInterval(tick,1000); tick();
 
 /* ============================ APPS ============================ */
 
-/* ----- YouTube REAL (player de busca embutido, toca de verdade) ----- */
+/* ----- YouTube REAL: busca de verdade + player por ID (toca de verdade) -----
+   O embed por listType=search foi descontinuado pelo YouTube; entao buscamos
+   os resultados reais (via r.jina.ai) e tocamos pelo ID, que e confiavel. */
 function appYT(b){
-  b.innerHTML=`<div class="pad" style="padding:10px;display:flex;gap:8px">
+  b.innerHTML=`<div style="padding:10px;display:flex;gap:8px">
       <input class="field" id="ytq" placeholder="pesquisar no YouTube..." value="lofi hip hop">
       <button class="btn r" id="ytgo">Buscar</button></div>
-    <div id="ytwrap" style="height:calc(100% - 64px)"></div>`;
-  const play=()=>{ const q=encodeURIComponent(document.getElementById("ytq").value||"musica");
-    document.getElementById("ytwrap").innerHTML=
-      `<iframe allow="autoplay; encrypted-media; fullscreen" allowfullscreen
-        src="https://www.youtube.com/embed/?listType=search&list=${q}&rel=0"></iframe>`; };
-  document.getElementById("ytgo").onclick=play; play();
+    <div id="ytplayer"></div>
+    <div id="ytlist" style="overflow:auto"></div>`;
+  const list=b.querySelector("#ytlist"), player=b.querySelector("#ytplayer"), q=b.querySelector("#ytq");
+  function play(id){
+    player.innerHTML=`<iframe style="width:100%;height:230px;background:#000"
+      allow="autoplay; encrypted-media; fullscreen" allowfullscreen
+      src="https://www.youtube.com/embed/${id}?autoplay=1&rel=0"></iframe>`;
+  }
+  async function search(){
+    const term=q.value.trim(); if(!term) return;
+    player.innerHTML=""; list.innerHTML='<div style="padding:20px;color:#94a3b8">buscando...</div>';
+    try{
+      const r=await fetch("https://r.jina.ai/https://www.youtube.com/results?search_query="+encodeURIComponent(term));
+      const t=await r.text();
+      const seen=new Set(), items=[]; const re=/\[([^\]]{4,90})\]\([^)]*watch\?v=([\w-]{11})/g; let m;
+      while((m=re.exec(t)) && items.length<25){
+        const title=m[1].trim(), id=m[2];
+        if(seen.has(id)) continue; seen.add(id);
+        if(/^(mix|https?|www\.|\d+:\d+|)/i.test(title)||title.length<4) continue;
+        items.push({title,id});
+      }
+      if(!items.length){ list.innerHTML='<div style="padding:20px;color:#ef4444">nada encontrado (sem internet?)</div>'; return; }
+      list.innerHTML=items.map(v=>
+        `<div class="ytrow" data-id="${v.id}" style="display:flex;gap:10px;align-items:flex-start;padding:10px;border-bottom:1px solid #1e293b;cursor:pointer">
+          <img loading="lazy" src="https://i.ytimg.com/vi/${v.id}/mqdefault.jpg"
+            style="width:130px;height:73px;border-radius:8px;object-fit:cover;background:#222;flex:0 0 auto">
+          <div style="font-size:14px;line-height:1.35">${v.title}</div></div>`).join("");
+      list.querySelectorAll(".ytrow").forEach(row=>row.onclick=()=>{ play(row.dataset.id);
+        player.scrollIntoView({block:"start"}); });
+      player.innerHTML='<div style="padding:14px;color:#94a3b8;text-align:center">toque num video para tocar</div>';
+    }catch(e){ list.innerHTML='<div style="padding:20px;color:#ef4444">erro: '+e.message+'</div>'; }
+  }
+  b.querySelector("#ytgo").onclick=search;
+  q.addEventListener("keydown",e=>{ if(e.key==="Enter") search(); });
+  search();
 }
 
 /* ----- Navegador REAL (Chromium de verdade por baixo) ----- */
@@ -254,23 +325,21 @@ function appPaint(b){
   cv.addEventListener("touchstart",start);cv.addEventListener("touchmove",move);cv.addEventListener("touchend",end);
 }
 
-/* ----- Olal AI (rede neural simples em JS) ----- */
+/* ----- Olal AI: a NOSSA rede neural (MLP char-level) rodando em JS ----- */
 function appAI(b){
   b.innerHTML=`<div class="pad" style="height:100%;display:flex;flex-direction:column;gap:10px">
-    <div id="chat" style="flex:1;overflow:auto;background:#0a1a14;border-radius:10px;padding:12px;color:#d1fae5">
-      Oi! Eu sou a Olal AI, rodando dentro do Olal. Fale comigo:<br><br></div>
+    <div id="chat" style="flex:1;overflow:auto;background:#0a1a14;border-radius:10px;padding:12px;color:#d1fae5;line-height:1.5">
+      Oi! Eu sou a <b>Olal AI</b>, uma rede neural (MLP char-level) que roda
+      aqui dentro - os mesmos pesos do nosso kernel. Fale comigo:<br><br></div>
     <div style="display:flex;gap:8px"><input class="field" id="aiq" placeholder="diga algo...">
     <button class="btn g" id="ais">&gt;</button></div></div>`;
   const chat=b.querySelector("#chat"),q=b.querySelector("#aiq");
-  const reply=t=>{ const k=t.toLowerCase();
-    if(k.includes("oi")||k.includes("ola")) return "Ola! Como vai voce?";
-    if(k.includes("nome")) return "Eu sou a Olal AI, parte do Olal OS.";
-    if(k.includes("youtube")) return "Abra o app YouTube na tela inicial, ele toca de verdade!";
-    if(k.includes("tchau")) return "Ate mais!";
-    return "Interessante! Me conte mais sobre isso."; };
   const send=()=>{ const t=q.value.trim(); if(!t)return; q.value="";
-    chat.innerHTML+=`<b>voce:</b> ${t}<br><b style="color:#2BD17A">olal:</b> ${reply(t)}<br><br>`;
-    chat.scrollTop=chat.scrollHeight; };
+    chat.innerHTML+=`<b>voce:</b> ${t}<br><b style="color:#2BD17A">olal:</b> <i>pensando...</i><br><br>`;
+    chat.scrollTop=chat.scrollHeight;
+    setTimeout(()=>{ const r=aiGenerate(t);
+      chat.lastChild; chat.innerHTML=chat.innerHTML.replace("<i>pensando...</i>", r||"...");
+      chat.scrollTop=chat.scrollHeight; }, 30); };
   b.querySelector("#ais").onclick=send; q.onkeydown=e=>{if(e.key==="Enter")send();};
 }
 

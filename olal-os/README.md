@@ -31,8 +31,13 @@ Ainda no Termux:
 ./olal
 ```
 
-Depois **abra o app Termux:X11** — o Olal vai aparecer em tela cheia, com a
-home, os apps e o touch. 🎉
+Ele tenta **abrir o app Termux:X11 sozinho**. Se não abrir, abra o app
+**Termux:X11** na mão — o Olal aparece em tela cheia, com a home, os apps e o
+touch. 🎉
+
+> **Importante:** o **app Termux:X11** (APK) precisa ser da **mesma versão** do
+> pacote `termux-x11-nightly`. Se a tela ficar preta, é quase sempre versão
+> diferente — reinstale os dois do F-Droid.
 
 ## O que funciona
 - **YouTube** — abre o YouTube **real** e toca vídeo (é o Chromium de verdade).
