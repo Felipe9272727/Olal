@@ -52,11 +52,15 @@ pulseaudio --start \
 #    desktop (inclusive o Firefox). Se ela nao existir, cai pro virgl_test_server
 #    _android (software) - exatamente o comportamento antigo, sem regressao.
 pkill -f virgl_test_server 2>/dev/null
+rm -f "$TMPDIR/olal-gpu" 2>/dev/null   # flag: GPU acelerada esta ativa?
 if command -v virgl_test_server >/dev/null 2>&1; then
   echo ">> GPU: virgl acelerado por zink/Turnip (Adreno)."
   MESA_LOADER_DRIVER_OVERRIDE=zink GALLIUM_DRIVER=zink ZINK_DESCRIPTORS=lazy \
   MESA_NO_ERROR=1 MESA_GL_VERSION_OVERRIDE=4.3COMPAT MESA_GLES_VERSION_OVERRIDE=3.2 \
     virgl_test_server --use-egl-surfaceless >/dev/null 2>&1 &
+  # avisa o olal-shell (via /tmp compartilhado) que a GPU acelerada esta no ar,
+  # pra ele so entao tentar os navegadores por GPU (senao fica no Firefox SW).
+  touch "$TMPDIR/olal-gpu" 2>/dev/null
 else
   echo ">> GPU: virgl (software) -- instale virglrenderer-mesa-zink p/ acelerar."
   MESA_NO_ERROR=1 MESA_GL_VERSION_OVERRIDE=4.3COMPAT \

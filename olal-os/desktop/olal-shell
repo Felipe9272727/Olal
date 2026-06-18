@@ -66,6 +66,10 @@ JS
 # ============================================================
 export DISPLAY="${DISPLAY:-:0}"
 export MOZ_FAKE_NO_SANDBOX=1 MOZ_DISABLE_RDD_SANDBOX=1
+# o boot (olal) cria /tmp/olal-gpu quando o virgl acelerado por zink/Turnip
+# sobe. Sem esse flag, NAO arriscamos os navegadores por GPU: vamos direto
+# pro Firefox software (sem atrasos), exatamente como antes.
+GPU_ON=0; [ -f /tmp/olal-gpu ] && GPU_ON=1
 
 # detector de tela preta: captura a raiz do X e mede o brilho medio (0-255).
 # UI do Olal tem fundo/icones coloridos -> brilho alto; GPU quebrada -> ~0.
@@ -107,7 +111,7 @@ GPU_ENV=(MESA_LOADER_DRIVER_OVERRIDE=zink TU_DEBUG=noconform vblank_mode=0
 
 # 1) CHROMIUM acelerado por GPU (Turnip/zink) - o caminho RAPIDO de verdade.
 #    So tenta se o detector de tela preta existe (senao seria arriscado).
-if [ "$HAVE_SHOT" = 1 ] && command -v chromium >/dev/null; then
+if [ "$GPU_ON" = 1 ] && [ "$HAVE_SHOT" = 1 ] && command -v chromium >/dev/null; then
   run_browser "Chromium GPU (Turnip/zink)" env "${GPU_ENV[@]}" \
     chromium --no-sandbox --kiosk --ozone-platform=x11 --enable-features=UseOzonePlatform,VaapiVideoDecoder \
     --use-gl=egl --ignore-gpu-blocklist --enable-gpu-rasterization --enable-zero-copy \
@@ -118,7 +122,7 @@ fi
 # 2) FIREFOX com WebRender por GPU (usa o virgl acelerado por zink/Turnip).
 #    So se houver detector (cai sozinho pro software se a GPU der tela preta).
 FF=""; command -v firefox-esr >/dev/null && FF=firefox-esr || { command -v firefox >/dev/null && FF=firefox; }
-if [ -n "$FF" ] && [ "$HAVE_SHOT" = 1 ]; then
+if [ -n "$FF" ] && [ "$GPU_ON" = 1 ] && [ "$HAVE_SHOT" = 1 ]; then
   run_browser "Firefox GPU (WebRender/virgl)" \
     env MOZ_WEBRENDER=1 MOZ_X11_EGL=1 MOZ_ACCELERATED=1 LIBGL_ALWAYS_SOFTWARE=0 \
     "$FF" --kiosk --profile "$PROF" --no-remote "$URL" && exit 0
