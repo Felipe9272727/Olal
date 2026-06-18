@@ -139,8 +139,12 @@ proot-distro login debian --shared-tmp -- /bin/bash -c '
 
   # ---- WM + barra do Olal ----
   mkdir -p /run/dbus
-  dbus-launch --exit-with-session openbox --sm-disable --config-file /root/.config/openbox/rc.xml &
-  sleep 1
+  # openbox: so gerencia janelas (maximize-all + undecorate via rc.xml).
+  # --config-file aponta pro rc.xml do Olal (regras mobile-like).
+  # Sem --sm-disable nem --exit-with-session (v8 usava `dbus-launch openbox &`
+  # simples; voltamos a isso pra maximizar compatibilidade).
+  dbus-launch openbox --config-file /root/.config/openbox/rc.xml &
+  sleep 2
   # barra do Olal no topo (botao "Olal" + lista de janelas). Auto-hide apos 2s.
   tint2 -c /root/.config/tint2/tint2rc >/dev/null 2>&1 &
   sleep 1
