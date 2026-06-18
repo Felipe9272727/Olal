@@ -5,11 +5,14 @@
 #  A interface do Olal E o sistema - nao e um launcher.
 # ============================================================
 
-# 0) AUTO-ATUALIZA tudo do GitHub (mostra o que aconteceu; nunca trava o boot)
-( SRC="$HOME/Olal"; DEB="$PREFIX/var/lib/proot-distro/installed-rootfs/debian"
-  if [ -d "$SRC/.git" ]; then
+# 0) AUTO-ATUALIZA do GitHub e PREPARA o deploy num /tmp compartilhado.
+#    Em vez de adivinhar o caminho do rootfs do Debian (que varia e fazia a
+#    copia falhar calada), a gente poe os arquivos no $TMPDIR e copia de DENTRO
+#    do proot (onde /tmp e sempre o lugar certo). A prova de bala.
+SRC="$HOME/Olal"
+DEPLOY="$TMPDIR/olal-deploy"
+( if [ -d "$SRC/.git" ]; then
     echo ">> Procurando atualizacoes do Olal OS..."
-    # reset --hard garante a versao mais nova mesmo com arvore suja / sem fast-forward
     if ( cd "$SRC" && timeout 30 git fetch origin main >/dev/null 2>&1 \
           && git reset --hard origin/main >/dev/null 2>&1 ); then
       echo ">> Atualizado para: $(cd "$SRC" && git log -1 --format='%h %s' 2>/dev/null)"
@@ -17,13 +20,13 @@
       echo "!! Nao consegui baixar a atualizacao (rede/VPN?). Usando a versao local."
       echo "   Dica: desligue a VPN e rode de novo, ela bloqueia o GitHub."
     fi
-    mkdir -p "$DEB/opt/olal/shell"
-    cp -rf "$SRC/olal-os/shell/." "$DEB/opt/olal/shell/" 2>/dev/null
-    cp -f  "$SRC/olal-os/desktop/olal-shell" "$DEB/usr/local/bin/olal-shell" 2>/dev/null
-    chmod +x "$DEB/usr/local/bin/olal-shell" 2>/dev/null
-    grep -o 'OLAL_BUILD = "[^"]*"' "$DEB/opt/olal/shell/index.html" 2>/dev/null \
-      | sed 's/OLAL_BUILD = />> Interface instalada: /'
   fi ) || true
+# stage dos arquivos no /tmp compartilhado (sempre visivel dentro do proot)
+rm -rf "$DEPLOY" 2>/dev/null; mkdir -p "$DEPLOY"
+cp -rf "$SRC/olal-os/shell"           "$DEPLOY/shell"      2>/dev/null
+cp -f  "$SRC/olal-os/desktop/olal-shell" "$DEPLOY/olal-shell" 2>/dev/null
+grep -o 'OLAL_BUILD = "[^"]*"' "$DEPLOY/shell/index.html" 2>/dev/null \
+  | sed 's/OLAL_BUILD = />> Versao que vai ser instalada: /'
 
 # 1) audio (PulseAudio sobre TCP -> YouTube com som)
 pulseaudio --start \
@@ -46,9 +49,19 @@ sleep 1
 
 echo ">> Abra o app Termux:X11 para ver o Olal OS."
 
-# 4) BOOTA o Olal OS: WM minimo (openbox) + a interface do Olal em tela cheia.
+# 4) BOOTA o Olal OS: instala o codigo novo (de DENTRO, via /tmp compartilhado),
+#    sobe o WM minimo (openbox) e a interface do Olal em tela cheia.
 #    A interface (com terminal/arquivos/sistema REAIS via backend) E o OS.
 proot-distro login debian --shared-tmp -- /bin/bash -c '
+  # instala o codigo novo que o Termux deixou em /tmp/olal-deploy (caminho certo
+  # SEMPRE, visto de dentro do proot - nada de adivinhar o rootfs)
+  if [ -d /tmp/olal-deploy/shell ]; then
+    mkdir -p /opt/olal/shell
+    cp -rf /tmp/olal-deploy/shell/. /opt/olal/shell/
+    [ -f /tmp/olal-deploy/olal-shell ] && cp -f /tmp/olal-deploy/olal-shell /usr/local/bin/olal-shell && chmod +x /usr/local/bin/olal-shell
+    echo ">> Olal OS instalado dentro do Debian:"
+    grep -o "OLAL_BUILD = \"[^\"]*\"" /opt/olal/shell/index.html 2>/dev/null | sed "s/OLAL_BUILD = />>   versao: /"
+  fi
   export DISPLAY=:0
   export PULSE_SERVER=127.0.0.1
   export GALLIUM_DRIVER=virpipe
