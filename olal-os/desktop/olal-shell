@@ -21,7 +21,6 @@ user_pref("browser.tabs.warnOnClose", false);
 user_pref("browser.warnOnQuit", false);
 user_pref("media.autoplay.default", 0);
 user_pref("media.autoplay.blocking_policy", 0);
-user_pref("layout.css.devPixelsPerPx", "2.5");
 JS
 
 # tenta um navegador; se ele cair em <6s (crash/tela preta), volta e tenta o proximo
