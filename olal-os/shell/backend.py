@@ -91,6 +91,12 @@ def listdir(path):
 class H(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *a, **k): super().__init__(*a, directory=ROOT, **k)
     def log_message(self, *a): pass
+    def end_headers(self):
+        # nunca deixa o navegador servir a interface do cache (evita ficar preso
+        # em versao antiga depois de atualizar)
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache"); self.send_header("Expires", "0")
+        super().end_headers()
     def _json(self, obj, code=200):
         b = json.dumps(obj).encode()
         self.send_response(code); self.send_header("Content-Type","application/json")
