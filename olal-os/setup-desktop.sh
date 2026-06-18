@@ -21,14 +21,20 @@ echo ">> instalando o Olal OS: WM minimo + app integration + navegador + GPU..."
 #  - firefox-esr + chromium: navegadores (Firefox = software garantido,
 #    Chromium = GPU acelerada por Turnip/zink)
 #  - mesa/vulkan: drivers (virgl no desktop, Turnip na Adreno)
+#  - python3-gi + webkit2gtk: o SHELL NATIVO do Olal (a UI E o sistema, nao
+#    um navegador). E o caminho preferido; os navegadores ficam de fallback.
 apt-get install -y --no-install-recommends \
     openbox tint2 wmctrl xdotool \
+    python3-gi gir1.2-webkit2-4.1 libwebkit2gtk-4.1-0 \
     firefox-esr chromium \
     dbus-x11 x11-xserver-utils \
     mesa-utils mesa-vulkan-drivers libvulkan1 vulkan-tools libgl1-mesa-dri \
     pulseaudio-utils imagemagick \
     python3 git build-essential nano wget curl ca-certificates \
     fonts-dejavu fonts-noto-core fonts-noto-color-emoji || true
+# webkit2gtk-4.0 como alternativa se o 4.1 nao existir no repo
+command -v dpkg >/dev/null && ! dpkg -s gir1.2-webkit2-4.1 >/dev/null 2>&1 && \
+  apt-get install -y --no-install-recommends python3-gi gir1.2-webkit2-4.0 libwebkit2gtk-4.0-37 || true
 
 # ---------- tuning do sistema (so o que REALMENTE funciona no proot) ----------
 # OBS: no proot SEM root nao ha systemd nem PAM, entao `systemctl disable`,
@@ -59,7 +65,8 @@ cd /root
 cp olal-src/olal-os/desktop/wallpaper.png /opt/olal/wallpaper.png 2>/dev/null || true
 cp olal-src/olal-os/desktop/icon.png      /opt/olal/icon.png      2>/dev/null || true
 cp olal-src/olal-os/desktop/*.desktop /usr/share/applications/ 2>/dev/null || true
-install -m755 olal-src/olal-os/desktop/olal-shell /usr/local/bin/olal-shell 2>/dev/null || true
+install -m755 olal-src/olal-os/desktop/olal-shell  /usr/local/bin/olal-shell  2>/dev/null || true
+install -m755 olal-src/olal-os/desktop/olal-webkit /usr/local/bin/olal-webkit 2>/dev/null || true
 
 # ---------- CONFIGURACOES DO WM E DA BARRA (integracao de apps) ----------
 mkdir -p /etc/olal /root/.config/openbox /root/.config/tint2

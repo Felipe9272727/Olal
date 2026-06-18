@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+# ============================================================
+#  Olal OS - SHELL NATIVO (a cara do sistema, de verdade).
+#  Um app GTK+WebKit do PROPRIO sistema - NAO e um navegador.
+#  Sem barra de URL, sem abas, sem nada de browser: so a interface
+#  do Olal em tela cheia, recebendo TOQUE nativo. Usa o mesmo caminho
+#  de render GTK/X11 que faz o Firefox funcionar no Termux:X11, porem
+#  e mais leve e E o sistema (a janela se chama "Olal OS").
+#
+#  Sai com codigo != 0 se o WebKit nao existir -> o olal-shell cai pro
+#  navegador como ultimo recurso.
+# ============================================================
+import sys, os
+
+URL = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8080/index.html"
+
+try:
+    import gi
+    gi.require_version("Gtk", "3.0")
+    # Debian 12 traz webkit2gtk-4.1; alguns ambientes ainda tem 4.0
+    _wk = None
+    for ver in ("4.1", "4.0", "6.0"):
+        try:
+            gi.require_version("WebKit2", ver); _wk = "WebKit2"; break
+        except ValueError:
+            pass
+    if _wk is None:
+        # WebKit 6 usa o namespace "WebKit"
+        for ver in ("6.0",):
+            try:
+                gi.require_version("WebKit", ver); _wk = "WebKit"; break
+            except ValueError:
+                pass
+    if _wk is None:
+        sys.stderr.write("olal-webkit: WebKit nao encontrado\n"); sys.exit(3)
+    from gi.repository import Gtk, Gdk, GLib
+    if _wk == "WebKit2":
+        from gi.repository import WebKit2 as WK
+    else:
+        from gi.repository import WebKit as WK
+except Exception as e:
+    sys.stderr.write("olal-webkit: GTK/WebKit indisponivel: %s\n" % e)
+    sys.exit(3)
+
+def main():
+    win = Gtk.Window()
+    win.set_title("Olal OS")
+    win.set_decorated(False)
+    win.connect("destroy", Gtk.main_quit)
+
+    view = WK.WebView()
+
+    # --- configuracoes: leve, sem cara de navegador ---
+    try:
+        s = view.get_settings()
+        s.set_property("enable-developer-extras", False)
+        s.set_property("enable-webgl", True)
+        s.set_property("enable-page-cache", False)
+        try: s.set_property("enable-accelerated-2d-canvas", True)
+        except Exception: pass
+        try: s.set_property("enable-write-console-messages-to-stdout", False)
+        except Exception: pass
+        # aceleracao por GPU "on demand" por padrao (WebKit cai pra software
+        # sozinho se a GPU falhar). Forca via OLAL_WK_GPU=1.
+        try:
+            pol = WK.HardwareAccelerationPolicy
+            mode = pol.ALWAYS if os.environ.get("OLAL_WK_GPU") == "1" else pol.ON_DEMAND
+            s.set_property("hardware-acceleration-policy", mode)
+        except Exception: pass
+    except Exception:
+        pass
+
+    # fundo escuro enquanto carrega (sem flash branco)
+    try:
+        rgba = Gdk.RGBA(); rgba.parse("#05070c")
+        view.set_background_color(rgba)
+    except Exception:
+        pass
+
+    win.add(view)
+    win.fullscreen()
+    win.show_all()
+
+    # esconde o cursor do mouse -> sensacao de toque nativo (sem setinha)
+    try:
+        blank = Gdk.Cursor.new_for_display(Gdk.Display.get_default(), Gdk.CursorType.BLANK_CURSOR)
+        win.get_window().set_cursor(blank)
+    except Exception:
+        pass
+
+    # recarrega se a pagina cair (ex.: backend reiniciou) - mantem a UI viva
+    def on_load_failed(*a):
+        GLib.timeout_add_seconds(2, lambda: (view.load_uri(URL), False)[1])
+        return True
+    try: view.connect("load-failed", on_load_failed)
+    except Exception: pass
+
+    view.load_uri(URL)
+    Gtk.main()
+
+if __name__ == "__main__":
+    main()
