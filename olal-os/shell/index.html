@@ -109,14 +109,50 @@ abre a wikipedia dos gatos -> @@ACT {"app":"navegador","query":"https://pt.wikip
 abre a calculadora -> @@ACT {"app":"calc"}
 Se for so conversa, NAO inclua @@ACT.`;
 
+async function aiLLM(prompt){
+  const url="https://text.pollinations.ai/"+encodeURIComponent(prompt)+"?model=openai";
+  const ac=new AbortController(); const tm=setTimeout(()=>ac.abort(),22000);
+  try{ const r=await fetch(url,{signal:ac.signal}); if(!r.ok) throw new Error("status "+r.status); return (await r.text()).trim(); }
+  finally{ clearTimeout(tm); }
+}
 async function aiAsk(history){
-  // monta um prompt compacto (system + ultimas trocas)
   const turns = history.slice(-6).map(m=>(m.role==="user"?"Usuario":"Olal")+": "+m.content).join("\n");
-  const prompt = AI_SYS + "\n\n" + turns + "\nOlal:";
-  const url = "https://text.pollinations.ai/" + encodeURIComponent(prompt) + "?model=openai";
-  const r = await fetch(url);
-  if(!r.ok) throw new Error("status "+r.status);
-  return (await r.text()).trim();
+  return aiLLM(AI_SYS + "\n\n" + turns + "\nOlal:");
+}
+
+/* ===== AGENTE: a IA na raiz do OS, com CONTROLE TOTAL. Raciocina, executa
+   comandos reais no sistema, observa o resultado e continua ate resolver. ===== */
+const AGENT_SYS =
+`Voce e a Olal AI, o AGENTE que controla o Olal OS (um Linux Debian real, no celular). Voce tem controle TOTAL do sistema.
+Resolva a tarefa do usuario em passos. A cada passo responda com EXATAMENTE UMA linha, comecando com uma destas palavras:
+EXEC: <comando bash>     -> roda no sistema; voce recebe a saida real e continua
+APP: <nome>              -> abre um app do Olal (youtube, navegador, calc, notas, terminal, relogio, paint, ola32, sistema, js)
+FINAL: <resposta>        -> quando terminar, responda ao usuario em portugues
+Regras: use EXEC pra QUALQUER coisa do sistema (ver/criar arquivos, instalar com 'apt-get install -y', status, processos, rede, etc.). NUNCA invente a saida - espere a OBSERVACAO. Seja direto e eficiente. Se a tarefa for so conversa, responda direto com FINAL.`;
+async function aiAgent(goal, onStep){
+  let convo = AGENT_SYS + "\n\nTarefa do usuario: " + goal + "\n";
+  for(let step=0; step<6; step++){
+    let out;
+    try{ out = await aiLLM(convo); }
+    catch(e){ return "A IA online nao respondeu (sua rede/VPN pode bloquear - desligue a VPN). Posso rodar comandos diretos: \"rode <comando>\"."; }
+    const line = (out.split("\n").find(l=>/^\s*(EXEC|APP|FINAL)\s*:/i.test(l)) || out).trim();
+    let m;
+    if((m = line.match(/^FINAL\s*:\s*([\s\S]+)/i))) return m[1].trim();
+    if((m = line.match(/^APP\s*:\s*([a-z0-9]+)/i))){
+      const app=m[1].toLowerCase();
+      if(APP_IDX[app]!==undefined){ openApp(APP_IDX[app]); onStep&&onStep("📱 abrindo "+app);
+        convo += "\nAPP: "+app+"\nOBSERVACAO: app '"+app+"' aberto.\n"; continue; }
+    }
+    if((m = line.match(/^EXEC\s*:\s*([\s\S]+)/i))){
+      const cmd=m[1].trim(); onStep&&onStep("$ "+cmd);
+      let obs="(sem backend - rode no Olal OS instalado)";
+      try{ const r=await sysExec(cmd); obs=((r.out||"").trim()||"(sem saida)").slice(0,1800); }catch(e){ obs="erro: "+e.message; }
+      onStep&&onStep(obs.split("\n").slice(0,3).join("\n"));
+      convo += "\nEXEC: "+cmd+"\nOBSERVACAO:\n"+obs+"\n"; continue;
+    }
+    return out;   // resposta livre, sem protocolo
+  }
+  return "(atingi o limite de passos; me diga se quer que eu continue)";
 }
 
 const APP_IDX = {ai:0,terminal:1,calc:2,notas:3,relogio:4,config:5,arquivos:6,paint:7,ola32:8,sistema:9,rede:10,navegador:11,js:12,youtube:13};
@@ -243,6 +279,14 @@ async function aiSend(){
     aiHist.push({role:"assistant",content:"(comando executado)"}); aiChat.scrollTop=aiChat.scrollHeight; return; }
   const local=localIntent(t);
   if(local){ aiBubble("a",local); aiHist.push({role:"assistant",content:local}); return; }
+  // OS REAL (com backend) -> AGENTE com controle total: raciocina + executa + observa
+  if(SYS_OK){
+    const b=aiBubble("a","🤖 pensando…"); const steps=[];
+    const final=await aiAgent(t,(s)=>{ steps.push(s);
+      b.textContent="🤖 "+steps.slice(-4).join("\n"); aiChat.scrollTop=aiChat.scrollHeight; });
+    b.textContent=final; aiHist.push({role:"assistant",content:final}); aiChat.scrollTop=aiChat.scrollHeight; return;
+  }
+  // preview web (sem backend) -> conversa simples
   const b=aiBubble("a","…");
   try{ const resp=await aiAsk(aiHist); const clean=aiHandle(resp);
        b.textContent=clean; aiHist.push({role:"assistant",content:clean}); }
