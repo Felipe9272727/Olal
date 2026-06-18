@@ -114,6 +114,29 @@
   @keyframes spin{ to{ transform:rotate(360deg); } }
   .spin{ display:inline-block; width:16px;height:16px;border:2px solid #ffffff40;border-top-color:#fff;
     border-radius:50%; animation:spin .8s linear infinite; vertical-align:-3px; }
+  /* ---- tela de boot do Olal OS ---- */
+  #boot{ position:absolute; inset:0; z-index:100; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:18px;
+    background:radial-gradient(circle at 50% 38%, #182a4a, #05070c 75%); transition:opacity .6s ease; }
+  #boot.gone{ opacity:0; pointer-events:none; }
+  #boot .logo{ width:92px; height:92px; border-radius:50%; border:5px solid var(--accent);
+    display:flex; align-items:center; justify-content:center; box-shadow:0 0 34px #2bd17a55;
+    animation:pulse 1.5s ease-in-out infinite; }
+  #boot .logo i{ width:40px; height:40px; border-radius:50%; background:var(--accent);
+    box-shadow:0 0 16px #2bd17a; }
+  #boot .name{ font-size:32px; font-weight:800; letter-spacing:1px; color:#f5f8fc; }
+  #boot .sub{ color:var(--soft); font-size:13px; margin-top:-12px; }
+  #boot .bar{ width:150px; height:4px; border-radius:2px; background:#ffffff18; overflow:hidden; margin-top:6px; }
+  #boot .bar i{ display:block; height:100%; width:38%; background:var(--accent); border-radius:2px;
+    animation:load 1.3s var(--ease) infinite; }
+  @keyframes pulse{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.09); } }
+  @keyframes load{ 0%{ transform:translateX(-120%); } 100%{ transform:translateX(420%); } }
+  /* menu de energia */
+  #power{ position:absolute; inset:0; z-index:70; display:none; align-items:center; justify-content:center;
+    background:#04070ecc; }
+  #power.on{ display:flex; }
+  #power .card{ background:#111c30; border-radius:20px; padding:22px; width:80%; max-width:300px;
+    display:flex; flex-direction:column; gap:12px; box-shadow:0 20px 50px #000a; }
 </style>
 </head>
 <body>
@@ -140,6 +163,24 @@
     <div id="aichat"></div>
     <div id="aiin"><input class="field" id="aimsg" placeholder="peça qualquer coisa ao Olal...">
       <button class="btn g" id="aisend">➤</button></div>
+  </div>
+
+  <!-- menu de energia -->
+  <div id="power" onclick="if(event.target.id==='power')powerMenu(false)">
+    <div class="card">
+      <div style="text-align:center;font-weight:700;font-size:18px;margin-bottom:4px">Energia</div>
+      <button class="btn" onclick="sysPower('restart')">Reiniciar interface</button>
+      <button class="btn r" onclick="sysPower('shutdown')">Desligar Olal OS</button>
+      <button class="btn s" onclick="powerMenu(false)">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- tela de boot do Olal OS -->
+  <div id="boot">
+    <div class="logo"><i></i></div>
+    <div class="name">Olal OS</div>
+    <div class="sub">Linux real, movido por IA</div>
+    <div class="bar"><i></i></div>
   </div>
 </div>
 
@@ -229,7 +270,16 @@ async function sysExec(cmd,cwd){ const r=await fetch(SYS_API+"/api/exec",{method
   headers:{"Content-Type":"application/json"},body:JSON.stringify({cmd,cwd})}); return r.json(); }
 async function sysLs(path){ const r=await fetch(SYS_API+"/api/ls?path="+encodeURIComponent(path||"")); return r.json(); }
 async function sysInfo(){ const r=await fetch(SYS_API+"/api/sysinfo"); return r.json(); }
+async function sysApps(){ const r=await fetch(SYS_API+"/api/apps"); return r.json(); }
+async function sysLaunch(exe){ return fetch(SYS_API+"/api/launch",{method:"POST",
+  headers:{"Content-Type":"application/json"},body:JSON.stringify({exec:exe})}); }
+async function sysPower(action){ try{ await fetch(SYS_API+"/api/power",{method:"POST",
+  headers:{"Content-Type":"application/json"},body:JSON.stringify({action})}); }catch(e){}
+  powerMenu(false); }
+function powerMenu(on){ document.getElementById("power").classList.toggle("on", on!==false); }
 fetch(SYS_API+"/api/sysinfo").then(r=>r.ok&&(SYS_OK=true)).catch(()=>{});
+/* tela de boot: some quando a interface esta pronta */
+window.addEventListener("load",()=>setTimeout(()=>document.getElementById("boot").classList.add("gone"),1600));
 
 /* ===== mesma lista/cores dos apps do nosso OS ===== */
 const APPS = [
@@ -247,24 +297,28 @@ const APPS = [
   {n:"Navegador", c:"#F97316", i:"W", f:appBrowser},
   {n:"Olal JS", c:"#FACC15", i:"JS", f:appJS},
   {n:"YouTube", c:"#FF0000", i:"YT", f:appYT},
+  {n:"Programas", c:"#6366F1", i:"▦", f:appPrograms},
 ];
 
 /* ajuste mobile UNIVERSAL: escala o design (largura fixa de celular) pra
    preencher qualquer tela, via transform:scale (funciona em todo navegador,
    inclusive firefox-esr antigo onde 'zoom' nao existe) */
 const screenEl=document.getElementById("screen");
-(function olalFit(){
-  const DW=412;                                   // largura de design (celular)
-  function apply(){
-    const s=Math.max(0.5, window.innerWidth/DW);
-    screenEl.style.width=DW+"px";
-    screenEl.style.height=(window.innerHeight/s)+"px";
-    screenEl.style.transform="scale("+s+")";
-  }
-  window.addEventListener("resize",apply);
-  window.addEventListener("orientationchange",apply);
-  apply();
-})();
+const DW=400;                                     // largura de design (celular)
+function olalApply(){
+  const w=window.innerWidth||screen.width, h=window.innerHeight||screen.height;
+  const s=Math.max(0.4, w/DW);
+  screenEl.style.width=DW+"px";
+  screenEl.style.height=(h/s)+"px";
+  screenEl.style.transform="scale("+s+")";
+}
+olalApply();
+window.addEventListener("resize",olalApply);
+window.addEventListener("orientationchange",olalApply);
+window.addEventListener("load",olalApply);
+/* re-aplica nos primeiros segundos (o Firefox no Termux:X11 pode reportar a
+   largura atrasado) */
+[80,200,500,1000,2000].forEach(t=>setTimeout(olalApply,t));
 
 /* efeito ripple ao tocar (toda a interface fica mais "viva") */
 document.addEventListener("pointerdown",e=>{
@@ -599,12 +653,33 @@ function appAI(b){
 
 /* ----- Config / Sistema / Rede / Arquivos ----- */
 function appConfig(b){
-  b.innerHTML=`<div class="pad">
-    <div style="background:#1E293B;border-radius:14px;padding:18px;margin-bottom:14px">
-      <div style="font-size:26px;font-weight:700">Olal OS</div>
-      <div style="color:#94a3b8">versao 1.0 - sobre Linux real</div>
-      <div style="color:#6ee7b7">no seu celular, com touch</div></div>
-    <button class="btn r" style="width:100%" onclick="location.reload()">Reiniciar interface</button></div>`;
+  b.innerHTML=`<div class="pad" style="display:flex;flex-direction:column;gap:14px">
+    <div style="background:linear-gradient(135deg,#15233d,#0e1a2c);border-radius:18px;padding:20px;display:flex;align-items:center;gap:14px">
+      <div style="width:54px;height:54px;border-radius:50%;border:4px solid #2BD17A;display:flex;align-items:center;justify-content:center">
+        <div style="width:22px;height:22px;border-radius:50%;background:#2BD17A"></div></div>
+      <div><div style="font-size:24px;font-weight:800">Olal OS</div>
+      <div style="color:#94a3b8;font-size:13px">versão 1.0 · Linux real, movido por IA</div></div></div>
+    <button class="btn" style="width:100%" onclick="openApp(14)">▦ Programas instalados</button>
+    <button class="btn g" style="width:100%" onclick="aiOpen()">🤖 Falar com a Olal AI</button>
+    <button class="btn r" style="width:100%" onclick="powerMenu(true)">⏻ Energia</button>
+  </div>`;
+}
+/* ----- Programas: lista e abre apps Linux REAIS (Olal OS roda programas de verdade) ----- */
+function appPrograms(b){
+  b.innerHTML=`<div class="pad"><div id="plist">carregando programas...</div></div>`;
+  const list=b.querySelector("#plist");
+  if(!SYS_OK){ list.innerHTML='<div style="color:#94a3b8">No Olal OS instalado, aqui aparecem os programas Linux de verdade (Firefox, LibreOffice...) e você os abre com um toque.</div>'; return; }
+  sysApps().then(d=>{
+    if(!d.apps||!d.apps.length){ list.innerHTML='<div style="color:#94a3b8">nenhum programa GUI encontrado</div>'; return; }
+    list.innerHTML=d.apps.map((a,i)=>
+      `<div class="prow" data-e="${a.exec.replace(/"/g,'&quot;')}" style="display:flex;align-items:center;gap:13px;background:#16203a;border-radius:14px;padding:13px;margin-bottom:9px;cursor:pointer;animation:pop .35s var(--ease) ${i*0.02}s backwards">
+        <div style="width:42px;height:42px;border-radius:11px;background:linear-gradient(135deg,#4f46e5,#6366F1);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px">${a.name[0].toUpperCase()}</div>
+        <div style="flex:1"><div style="font-weight:600">${a.name}</div>
+        <div style="color:#7b8aa3;font-size:11px">${a.exec.split(" ")[0]}</div></div>
+        <div style="color:#2BD17A;font-size:20px">▶</div></div>`).join("");
+    list.querySelectorAll(".prow").forEach(row=>row.onclick=()=>{ sysLaunch(row.dataset.e);
+      row.style.opacity=".5"; setTimeout(()=>row.style.opacity="",600); });
+  }).catch(()=>list.innerHTML='<div style="color:#ef4444">erro ao listar</div>');
 }
 function appSys(b){
   b.innerHTML=`<div class="pad"><div id="sysbox" style="background:#0e1a18;border-radius:12px;padding:16px;line-height:1.9">carregando...</div></div>`;

@@ -37,6 +37,31 @@ def sysinfo():
         "distro":  g("cat /etc/debian_version 2>/dev/null | sed 's/^/Debian /' || echo base"),
     }
 
+def listapps():
+    """lista os programas GUI instalados no Olal OS (.desktop)."""
+    import glob, re
+    out, seen = [], set()
+    for f in sorted(glob.glob("/usr/share/applications/*.desktop") + glob.glob(os.path.expanduser("~/.local/share/applications/*.desktop"))):
+        try:
+            txt = open(f, errors="ignore").read()
+            if "NoDisplay=true" in txt: continue
+            nm = re.search(r"(?m)^Name=(.+)$", txt); ex = re.search(r"(?m)^Exec=(.+)$", txt)
+            if not nm or not ex: continue
+            name = nm.group(1).strip(); exe = re.sub(r"%[fFuUdDnN]", "", ex.group(1)).strip()
+            key = exe.split()[0] if exe else name
+            if key in seen or "olal" in f.lower(): continue
+            seen.add(key); out.append({"name": name, "exec": exe})
+        except: pass
+    return {"apps": out}
+
+def launch(exe):
+    try:
+        env = dict(os.environ, DISPLAY=os.environ.get("DISPLAY", ":0"))
+        subprocess.Popen(["bash","-lc", exe + " >/dev/null 2>&1 &"], env=env)
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
 def listdir(path):
     path = os.path.abspath(os.path.expanduser(path or HOME))
     try:
@@ -62,6 +87,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query)
         if u.path == "/api/sysinfo": return self._json(sysinfo())
+        if u.path == "/api/apps":    return self._json(listapps())
         if u.path == "/api/ls":      return self._json(listdir(q.get("path",[HOME])[0]))
         if u.path == "/api/read":
             try: return self._json({"text": open(os.path.expanduser(q.get("path",[""])[0])).read()[:100000]})
@@ -72,7 +98,13 @@ class H(http.server.SimpleHTTPRequestHandler):
         try: data = json.loads(body or b"{}")
         except: data = {}
         u = urllib.parse.urlparse(self.path)
-        if u.path == "/api/exec":  return self._json(run(data.get("cmd",""), data.get("cwd")))
+        if u.path == "/api/exec":   return self._json(run(data.get("cmd",""), data.get("cwd")))
+        if u.path == "/api/launch": return self._json(launch(data.get("exec","")))
+        if u.path == "/api/power":
+            a = data.get("action")
+            if a == "restart": subprocess.Popen(["bash","-lc","sleep 1; pkill -f olal-shell; pkill chromium; pkill firefox-esr"]); return self._json({"ok":True})
+            if a == "shutdown": subprocess.Popen(["bash","-lc","sleep 1; pkill -9 -f 'startxfce\\|openbox\\|olal-shell\\|chromium\\|firefox'"]); return self._json({"ok":True})
+            return self._json({"ok":False})
         if u.path == "/api/write":
             try:
                 open(os.path.expanduser(data.get("path","")), "w").write(data.get("text",""))

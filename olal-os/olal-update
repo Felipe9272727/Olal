@@ -1,0 +1,21 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# ============================================================
+#  Olal OS - atualiza a interface e o backend para a versao
+#  mais nova (puxa do GitHub e copia pro Debian).
+# ============================================================
+set -e
+SRC="$HOME/Olal"
+DEB="$PREFIX/var/lib/proot-distro/installed-rootfs/debian"
+
+[ -d "$SRC/.git" ] || { echo "repo nao encontrado em $SRC; rode o install primeiro"; exit 1; }
+echo ">> baixando a versao mais nova..."
+( cd "$SRC" && git pull --ff-only ) || ( cd "$SRC" && git fetch && git reset --hard origin/main )
+
+echo ">> atualizando a interface e o backend do Olal OS..."
+mkdir -p "$DEB/opt/olal/shell"
+cp -rf "$SRC/olal-os/shell/." "$DEB/opt/olal/shell/"
+cp -f  "$SRC/olal-os/desktop/olal-shell" "$DEB/usr/local/bin/olal-shell"; chmod +x "$DEB/usr/local/bin/olal-shell"
+cp -f  "$SRC/olal-os/desktop/wallpaper.png" "$DEB/opt/olal/wallpaper.png" 2>/dev/null || true
+
+echo ""
+echo "  Olal OS atualizado!  Rode:  ./olal"
