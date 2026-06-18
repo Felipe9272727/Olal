@@ -338,7 +338,7 @@ function aiHandle(resp){
 /* ===== ponte com o SISTEMA REAL (backend Olal) - faz o Olal ser um OS ===== */
 /* carimbo de versao: aparece embaixo da home. Se NAO mudar depois de atualizar,
    o update nao chegou na interface (VPN bloqueou o git ou cache do navegador). */
-const OLAL_BUILD = "2026-06-18 • App Store + update v2";
+const OLAL_BUILD = "2026-06-18 • App Store + auto-cura v3";
 window.addEventListener("load",()=>{ const e=document.getElementById("build"); if(e) e.textContent="Olal OS  ·  "+OLAL_BUILD; });
 
 const SYS_API = location.origin;
