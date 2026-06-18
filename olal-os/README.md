@@ -1,11 +1,26 @@
-# Olal OS — distro Debian de verdade no seu celular (Android, sem root)
+# Olal OS — um sistema operacional de verdade, baseado em Debian
 
-O Olal OS roda um **Debian Linux real com desktop XFCE** no seu Android (via
-Termux + Termux:X11), com **aceleração de GPU (virgl)** para o navegador
-renderizar, e a **cara do Olal** por cima (wallpaper, apps, a Olal AI, OLA-32).
+O **Olal OS** é um sistema operacional próprio **construído sobre o Debian**
+(do jeito que o Linux Mint é sobre o Ubuntu). O Debian é só o motor invisível
+por baixo — a cara, o nome, os apps e o comportamento são do Olal. Roda no seu
+Android via Termux, **sem root**.
 
-> ⚡ **Só quer a interface, sem instalar nada?** Abra no Chrome do celular:
+Não é "um Debian com um app do Olal". O sistema **boota direto na interface do
+Olal**, se identifica como **Olal OS** em tudo (boot, terminal, `neofetch`), e
+os apps são **reais**:
+- **Terminal** = bash de verdade do sistema.
+- **Arquivos** = o sistema de arquivos real.
+- **Sistema** = uname/CPU/memória/disco/GPU reais.
+- **Olal AI** = controla o sistema de verdade (abre apps, roda comandos, instala
+  programas) — uma OS movida por IA.
+- **OLA-32, Olal JS, Calc, Notas, YouTube, Navegador** — os apps do Olal.
+
+Tudo isso é servido pelo **backend do Olal** (`backend.py`), que liga a interface
+ao Debian por baixo. É isso que faz o Olal ser um OS, não um launcher.
+
+> ⚡ **Só quer ver a interface, sem instalar?** Abra no Chrome do celular:
 > **https://felipe9272727.github.io/Olal/olal-os/shell/**
+> (no preview, os apps de sistema ficam em modo demonstração; instalado, são reais.)
 
 ## Por que dava tela preta (e a correção verídica)
 A tela preta era **específica do Chromium**: o renderizador por software
