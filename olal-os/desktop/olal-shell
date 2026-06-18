@@ -76,9 +76,14 @@ user_pref("browser.newtabpage.enabled", false);
 user_pref("toolkit.telemetry.enabled", false);
 user_pref("datareporting.healthreport.uploadEnabled", false);
 user_pref("network.prefetch-next", false);
-/* PERF novo: GPU/Vulkan */
-user_pref("gfx.webrender.all", true);                /* WebRender sempre (mais rapido em Adreno via zink) */
-user_pref("gfx.webrender.compositor", true);
+/* CORRECAO DA TELA PRETA: a outra IA forcou WebRender por HARDWARE
+   (gfx.webrender.all=true) - isso pinta a tela uma vez e vai pra PRETO num
+   GL instavel (Termux:X11). REMOVIDO. Em vez disso, forca WebRender por
+   SOFTWARE: renderiza de forma confiavel (era o caminho que funcionava),
+   sem depender da GPU. A GPU continua sendo usada pelos tiers de GPU
+   (Chromium/WebKit), com detector de tela preta. */
+user_pref("gfx.webrender.software", true);           /* WebRender por CPU = confiavel, nunca tela preta */
+user_pref("gfx.webrender.force-disabled", false);
 user_pref("dom.ipc.plugins.asyncInit", true);
 user_pref("dom.ipc.processPrelaunch.enabled", false);
 JS
@@ -166,14 +171,16 @@ try: gi.require_version('WebKit',v)
 except Exception: raise SystemExit(1)" 2>/dev/null; }
 WK=/usr/local/bin/olal-webkit
 if [ -x "$WK" ] && have_webkit; then
-  # 0a) shell nativo por GPU (so se a GPU acelerada esta no ar)
-  if [ "$GPU_ON" = 1 ]; then
+  # 0a) shell nativo por GPU - SO com o detector de tela preta ativo (senao
+  #     uma falha de GPU ficaria presa em preto sem ser detectada).
+  if [ "$GPU_ON" = 1 ] && [ "$HAVE_SHOT" = 1 ]; then
     run_browser "Olal nativo (WebKit GPU)" env "${GPU_ENV[@]}" OLAL_WK_GPU=1 \
       python3 "$WK" "$URL" && exit 0
   fi
-  # 0b) shell nativo por software (confiavel - mesmo caminho do Firefox que ja
-  #     funciona; compositing por software evita tela preta)
-  run_browser "Olal nativo (WebKit)" env WEBKIT_DISABLE_COMPOSITING_MODE=1 \
+  # 0b) shell nativo por software (CONFIAVEL - exatamente a config testada que
+  #     renderiza: compositing desligado + GL por software = sem GPU = sem tela
+  #     preta. E o caminho preferido pra UI nativa.)
+  run_browser "Olal nativo (WebKit)" env WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1 \
     python3 "$WK" "$URL" && exit 0
 else
   # webkit ausente: instala em 2o plano pro proximo boot virar nativo (4.1 ou 4.0)
