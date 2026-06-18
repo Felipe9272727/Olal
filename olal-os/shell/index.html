@@ -277,7 +277,8 @@ async function sysPower(action){ try{ await fetch(SYS_API+"/api/power",{method:"
   headers:{"Content-Type":"application/json"},body:JSON.stringify({action})}); }catch(e){}
   powerMenu(false); }
 function powerMenu(on){ document.getElementById("power").classList.toggle("on", on!==false); }
-fetch(SYS_API+"/api/sysinfo").then(r=>r.ok&&(SYS_OK=true)).catch(()=>{});
+if(location.protocol.startsWith("http"))
+  fetch(SYS_API+"/api/sysinfo").then(r=>r.ok&&(SYS_OK=true)).catch(()=>{});
 /* tela de boot: some quando a interface esta pronta */
 window.addEventListener("load",()=>setTimeout(()=>document.getElementById("boot").classList.add("gone"),1600));
 
