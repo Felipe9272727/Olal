@@ -21,7 +21,8 @@ DEPLOY="$TMPDIR/olal-deploy"
 # stage dos arquivos no /tmp compartilhado (sempre visivel dentro do proot)
 rm -rf "$DEPLOY" 2>/dev/null; mkdir -p "$DEPLOY"
 cp -rf "$SRC/olal-os/shell"           "$DEPLOY/shell"      2>/dev/null
-cp -f  "$SRC/olal-os/desktop/olal-shell" "$DEPLOY/olal-shell" 2>/dev/null
+cp -f  "$SRC/olal-os/desktop/olal-shell"  "$DEPLOY/olal-shell"  2>/dev/null
+cp -f  "$SRC/olal-os/desktop/olal-webkit" "$DEPLOY/olal-webkit" 2>/dev/null
 cp -f  "$SRC/olal-os/desktop/olal-rc.xml"  "$DEPLOY/olal-rc.xml" 2>/dev/null
 cp -f  "$SRC/olal-os/desktop/olal-tint2rc" "$DEPLOY/olal-tint2rc" 2>/dev/null
 grep -o 'OLAL_BUILD = "[^"]*"' "$DEPLOY/shell/index.html" 2>/dev/null \
@@ -37,6 +38,7 @@ for RD in \
     cp -rf "$DEPLOY/shell/." "$RD/opt/olal/shell/" 2>/dev/null \
       && cp -f "$DEPLOY/olal-shell" "$RD/usr/local/bin/olal-shell" 2>/dev/null \
       && chmod +x "$RD/usr/local/bin/olal-shell" 2>/dev/null
+    [ -f "$DEPLOY/olal-webkit" ] && cp -f "$DEPLOY/olal-webkit" "$RD/usr/local/bin/olal-webkit" 2>/dev/null && chmod +x "$RD/usr/local/bin/olal-webkit" 2>/dev/null
     # tambem espalha as config do WM/barra (pro caso de setup-desktop nao ter rodado ainda)
     [ -f "$DEPLOY/olal-rc.xml" ] && cp -f "$DEPLOY/olal-rc.xml" "$RD/root/.config/openbox/rc.xml" 2>/dev/null
     [ -f "$DEPLOY/olal-tint2rc" ] && cp -f "$DEPLOY/olal-tint2rc" "$RD/root/.config/tint2/tint2rc" 2>/dev/null
@@ -97,6 +99,7 @@ proot-distro login debian --shared-tmp -- /bin/bash -c '
     mkdir -p /opt/olal/shell
     cp -rf /tmp/olal-deploy/shell/. /opt/olal/shell/
     [ -f /tmp/olal-deploy/olal-shell ] && cp -f /tmp/olal-deploy/olal-shell /usr/local/bin/olal-shell && chmod +x /usr/local/bin/olal-shell
+    [ -f /tmp/olal-deploy/olal-webkit ] && cp -f /tmp/olal-deploy/olal-webkit /usr/local/bin/olal-webkit && chmod +x /usr/local/bin/olal-webkit
     # espalha configs do WM/barra (idempotente; so reescreve se forem novas)
     if [ -f /tmp/olal-deploy/olal-rc.xml ]; then
       mkdir -p /root/.config/openbox /etc/olal

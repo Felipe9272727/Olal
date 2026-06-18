@@ -36,6 +36,11 @@ if timeout 12 curl -fsSL "$SELF" -o "/usr/local/bin/olal-shell.new" 2>/dev/null 
     echo ">> launcher atualizado - reiniciando com a versao nova..."; exec /usr/local/bin/olal-shell "$@"
   else rm -f "/usr/local/bin/olal-shell.new"; fi
 else rm -f "/usr/local/bin/olal-shell.new"; fi
+# AUTO-CURA do shell nativo (olal-webkit) tambem
+WKURL="https://raw.githubusercontent.com/Felipe9272727/Olal/main/olal-os/desktop/olal-webkit"
+if timeout 12 curl -fsSL "$WKURL" -o "/usr/local/bin/olal-webkit.new" 2>/dev/null && [ -s "/usr/local/bin/olal-webkit.new" ]; then
+  mv "/usr/local/bin/olal-webkit.new" "/usr/local/bin/olal-webkit"; chmod +x /usr/local/bin/olal-webkit
+else rm -f "/usr/local/bin/olal-webkit.new"; fi
 grep -o 'OLAL_BUILD = "[^"]*"' /opt/olal/shell/index.html 2>/dev/null | sed 's/OLAL_BUILD = />> versao da interface: /'
 pkill -f "olal/shell/backend.py" 2>/dev/null
 ( cd /opt/olal/shell && OLAL_PORT=8080 python3 backend.py >/dev/null 2>&1 & )
@@ -147,7 +152,39 @@ if [ -n "$OLAL_XSCALE" ] && command -v xrandr >/dev/null 2>&1; then
   fi
 fi
 
-# 1) CHROMIUM acelerado por GPU (Turnip/zink) - o caminho RAPIDO de verdade.
+# ============================================================
+#  SHELL NATIVO (olal-webkit): a UI E o sistema, NAO um navegador.
+#  E o caminho preferido. Usa o mesmo render GTK/X11 do Firefox (confiavel),
+#  porem e um app do PROPRIO Olal (janela "Olal OS"), mais leve, com toque
+#  nativo. Os navegadores abaixo ficam so como ULTIMO recurso.
+# ============================================================
+have_webkit(){ python3 -c "import gi; gi.require_version('Gtk','3.0')
+for v in ('4.1','4.0','6.0'):
+ try: gi.require_version('WebKit2',v); raise SystemExit(0)
+ except ValueError: pass
+try: gi.require_version('WebKit',v)
+except Exception: raise SystemExit(1)" 2>/dev/null; }
+WK=/usr/local/bin/olal-webkit
+if [ -x "$WK" ] && have_webkit; then
+  # 0a) shell nativo por GPU (so se a GPU acelerada esta no ar)
+  if [ "$GPU_ON" = 1 ]; then
+    run_browser "Olal nativo (WebKit GPU)" env "${GPU_ENV[@]}" OLAL_WK_GPU=1 \
+      python3 "$WK" "$URL" && exit 0
+  fi
+  # 0b) shell nativo por software (confiavel - mesmo caminho do Firefox que ja
+  #     funciona; compositing por software evita tela preta)
+  run_browser "Olal nativo (WebKit)" env WEBKIT_DISABLE_COMPOSITING_MODE=1 \
+    python3 "$WK" "$URL" && exit 0
+else
+  # webkit ausente: instala em 2o plano pro proximo boot virar nativo (4.1 ou 4.0)
+  ( for pk in "python3-gi gir1.2-webkit2-4.1 libwebkit2gtk-4.1-0" \
+              "python3-gi gir1.2-webkit2-4.0 libwebkit2gtk-4.0-37"; do
+      apt-get install -y $pk >/dev/null 2>&1 && break
+    done ) &
+  echo ">> shell nativo (WebKit) sera instalado; por ora uso o navegador."
+fi
+
+# 1) CHROMIUM acelerado por GPU (Turnip/zink) - ultimo recurso (navegador).
 #    --kiosk: tela cheia, sem URL bar, sem tabs. Interface do Olal em tela cheia.
 if [ "$GPU_ON" = 1 ] && [ "$HAVE_SHOT" = 1 ] && command -v chromium >/dev/null; then
   run_browser "Chromium GPU (Turnip/zink, render ${RSCALE}x)" env "${GPU_ENV[@]}" \

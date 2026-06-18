@@ -61,6 +61,11 @@ for RD in \
     else
       bad "    sem /usr/local/bin/olal-shell no Debian"
     fi
+    # ---- SHELL NATIVO: a UI E o sistema (WebKit), nao um navegador ----
+    [ -x "$RD/usr/local/bin/olal-webkit" ] && ok "    shell NATIVO (olal-webkit) instalado" || bad "    shell nativo AUSENTE (vai usar navegador; rode ./olal)"
+    [ -x "$RD/usr/bin/python3" ] && [ -e "$RD/usr/lib/x86_64-linux-gnu/girepository-1.0/WebKit2-4.1.typelib" -o -e "$RD/usr/lib/aarch64-linux-gnu/girepository-1.0/WebKit2-4.1.typelib" -o -e "$RD/usr/lib/aarch64-linux-gnu/girepository-1.0/WebKit2-4.0.typelib" ] \
+      && ok "    WebKitGTK presente (UI roda NATIVA, sem Firefox)" \
+      || bad "    WebKitGTK ausente (instalando em 2o plano; vira nativo no proximo boot)"
     # ---- checagens novas: integracao de apps (WM + barra + wmctrl) ----
     [ -f "$RD/root/.config/openbox/rc.xml" ] && ok "    openbox config (maximize-all) instalada" || bad "    openbox sem config (apps abrem em janelas, rode ./olal)"
     [ -f "$RD/root/.config/tint2/tint2rc" ] && ok "    barra do Olal (tint2) configurada" || bad "    tint2 sem config (sem botao Olal)"
