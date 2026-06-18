@@ -2,8 +2,9 @@
 # Abre a interface do Olal (a IA + apps) no navegador do desktop.
 # Padrao: Firefox (renderiza pelo mesmo caminho GTK/X11 do desktop, que
 # funciona). Alternativa: 'olal-shell chromium' usa o Chromium via zink/Turnip.
-pkill -f "http.server 8080" 2>/dev/null
-( cd /opt/olal/shell && python3 -m http.server 8080 >/dev/null 2>&1 & )
+# backend do Olal: serve a interface E expoe o sistema real (terminal, arquivos)
+pkill -f "olal/shell/backend.py" 2>/dev/null
+( cd /opt/olal/shell && OLAL_PORT=8080 python3 backend.py >/dev/null 2>&1 & )
 sleep 1
 URL="http://localhost:8080/index.html"
 

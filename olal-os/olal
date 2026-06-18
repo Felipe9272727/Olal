@@ -1,8 +1,8 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # ============================================================
-#  Olal OS - inicia o desktop Debian XFCE no Termux:X11 com
-#  GPU REAL da Adreno (virgl p/ o desktop, Turnip/zink p/ apps).
-#  Metodo comprovado (phoenixbyrd/Termux_XFCE), adaptado.
+#  Olal OS - boota DIRETO na interface do Olal (o OS em si),
+#  rodando sobre o Debian, no Termux:X11, com GPU da Adreno.
+#  A interface do Olal E o sistema - nao e um launcher.
 # ============================================================
 
 # 1) audio (PulseAudio sobre TCP -> YouTube com som)
@@ -24,9 +24,10 @@ sleep 3
 am start --user 0 -n com.termux.x11/com.termux.x11.MainActivity >/dev/null 2>&1 || true
 sleep 1
 
-echo ">> Abra o app Termux:X11 para ver o desktop do Olal."
+echo ">> Abra o app Termux:X11 para ver o Olal OS."
 
-# 4) desktop XFCE dentro do Debian (virpipe), com audio e dbus
+# 4) BOOTA o Olal OS: WM minimo (openbox) + a interface do Olal em tela cheia.
+#    A interface (com terminal/arquivos/sistema REAIS via backend) E o OS.
 proot-distro login debian --shared-tmp -- /bin/bash -c '
   export DISPLAY=:0
   export PULSE_SERVER=127.0.0.1
@@ -35,5 +36,7 @@ proot-distro login debian --shared-tmp -- /bin/bash -c '
   export MESA_GLES_VERSION_OVERRIDE=3.2
   export MESA_NO_ERROR=1
   mkdir -p /run/dbus
-  dbus-launch --exit-with-session xfce4-session
+  dbus-launch openbox &
+  sleep 2
+  exec olal-shell
 '
