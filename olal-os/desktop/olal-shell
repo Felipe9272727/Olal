@@ -4,6 +4,12 @@
 #  Sobe o backend (terminal/arquivos/sistema reais) e abre a
 #  interface no 1o navegador que RENDERIZAR (firefox -> chromium).
 # ============================================================
+# auto-atualiza a interface do GitHub (best-effort; nao trava se offline/VPN)
+B="https://raw.githubusercontent.com/Felipe9272727/Olal/main/olal-os/shell"
+for f in index.html backend.py model.js; do
+  timeout 12 curl -fsSL "$B/$f" -o "/opt/olal/shell/$f.new" 2>/dev/null && \
+    [ -s "/opt/olal/shell/$f.new" ] && mv "/opt/olal/shell/$f.new" "/opt/olal/shell/$f" || rm -f "/opt/olal/shell/$f.new"
+done
 pkill -f "olal/shell/backend.py" 2>/dev/null
 ( cd /opt/olal/shell && OLAL_PORT=8080 python3 backend.py >/dev/null 2>&1 & )
 sleep 1
