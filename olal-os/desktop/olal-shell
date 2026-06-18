@@ -115,12 +115,18 @@ if [ "$HAVE_SHOT" = 1 ] && command -v chromium >/dev/null; then
     --disable-background-timer-throttling --no-first-run --disable-sync --disable-translate \
     --disable-extensions --disable-component-update --user-data-dir="$HOME/.olal-chrome" "$URL" && exit 0
 fi
-# 2) FIREFOX por software - o caminho GARANTIDO (sempre renderiza no Termux:X11)
-command -v firefox-esr >/dev/null && run_browser "Firefox (software)" \
-  firefox-esr --kiosk --profile "$PROF" --no-remote "$URL" && exit 0
-command -v firefox     >/dev/null && run_browser "Firefox (software)" \
-  firefox     --kiosk --profile "$PROF" --no-remote "$URL" && exit 0
-# 3) CHROMIUM swiftshader em processo unico (ultimo recurso)
+# 2) FIREFOX com WebRender por GPU (usa o virgl acelerado por zink/Turnip).
+#    So se houver detector (cai sozinho pro software se a GPU der tela preta).
+FF=""; command -v firefox-esr >/dev/null && FF=firefox-esr || { command -v firefox >/dev/null && FF=firefox; }
+if [ -n "$FF" ] && [ "$HAVE_SHOT" = 1 ]; then
+  run_browser "Firefox GPU (WebRender/virgl)" \
+    env MOZ_WEBRENDER=1 MOZ_X11_EGL=1 MOZ_ACCELERATED=1 LIBGL_ALWAYS_SOFTWARE=0 \
+    "$FF" --kiosk --profile "$PROF" --no-remote "$URL" && exit 0
+fi
+# 3) FIREFOX por software - o caminho GARANTIDO (identico ao que ja funcionava)
+[ -n "$FF" ] && run_browser "Firefox (software)" \
+  "$FF" --kiosk --profile "$PROF" --no-remote "$URL" && exit 0
+# 4) CHROMIUM swiftshader em processo unico (ultimo recurso)
 command -v chromium >/dev/null && run_browser "Chromium swiftshader" \
   chromium --no-sandbox --kiosk --single-process --ozone-platform=x11 \
   --use-gl=swiftshader --enable-unsafe-swiftshader \
