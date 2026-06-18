@@ -20,6 +20,10 @@ panel_size = 100% 28
 panel_margin = 0 0
 panel_padding = 6 0 4
 panel_background_id = 0
+# DOCK mode: o painel e tratado como um dock pelo WM. As janelas maximizadas
+# NAO cobrem a area do dock. Assim a barra do Olal fica sempre visivel,
+# mesmo com o navegador kiosk ou apps baixados em fullscreen.
+panel_dock = 1
 wm_menu = 0
 
 # ----- botao "Olal" (Launcher) -----
