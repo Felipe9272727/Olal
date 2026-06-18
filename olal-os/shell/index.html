@@ -338,6 +338,20 @@ document.addEventListener("pointerdown",e=>{
   t.appendChild(rip); setTimeout(()=>rip.remove(),500);
 },{passive:true});
 
+/* gesto: PINÇA pra redimensionar a interface inteira (resolve tamanho na hora) */
+let _pinch=0;
+document.addEventListener("touchmove",e=>{
+  if(e.touches.length===2 && e.touches[0] && e.touches[1]){
+    const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+    if(_pinch){ const r=d/_pinch;
+      if(Math.abs(r-1)>0.015){ userScale=Math.min(3,Math.max(0.4,userScale*r));
+        localStorage.setItem("olal_scale",userScale.toFixed(3)); olalApply(); _pinch=d; } }
+    else _pinch=d;
+    e.preventDefault();
+  }
+},{passive:false});
+document.addEventListener("touchend",e=>{ if(e.touches.length<2) _pinch=0; },{passive:true});
+
 /* gesto: deslizar da borda esquerda pra VOLTAR (nativo de celular) */
 let _sx=0,_sy=0,_st=0;
 document.addEventListener("touchstart",e=>{ const t=e.touches[0]; _sx=t.clientX; _sy=t.clientY; _st=Date.now(); },{passive:true});
@@ -680,10 +694,11 @@ function appConfig(b){
       <div style="font-weight:700;margin-bottom:4px">Tamanho da interface</div>
       <div style="color:#94a3b8;font-size:13px;margin-bottom:12px">Se a tela parecer pequena ou grande demais, ajuste aqui.</div>
       <div style="display:flex;gap:10px;align-items:center">
-        <button class="btn s" style="flex:1;font-size:22px" onclick="setScale(0.9)">A−</button>
+        <button class="btn s" style="flex:1;font-size:22px" onclick="setScale(0.82)">A−</button>
         <button class="btn s" style="flex:1" onclick="resetScale()">Auto</button>
-        <button class="btn s" style="flex:1;font-size:22px" onclick="setScale(1.1)">A+</button>
-      </div></div>
+        <button class="btn s" style="flex:1;font-size:22px" onclick="setScale(1.22)">A+</button>
+      </div>
+      <div style="color:#6b7a90;font-size:12px;margin-top:8px">dica: você também pode dar uma <b>pinça</b> (2 dedos) na tela pra ajustar.</div></div>
     <button class="btn" style="width:100%" onclick="openApp(14)">▦ Programas instalados</button>
     <button class="btn g" style="width:100%" onclick="aiOpen()">🤖 Falar com a Olal AI</button>
     <button class="btn r" style="width:100%" onclick="powerMenu(true)">⏻ Energia</button>
