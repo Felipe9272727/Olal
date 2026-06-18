@@ -5,17 +5,24 @@
 #  A interface do Olal E o sistema - nao e um launcher.
 # ============================================================
 
-# 0) AUTO-ATUALIZA tudo do GitHub (best-effort; nunca trava o boot)
+# 0) AUTO-ATUALIZA tudo do GitHub (mostra o que aconteceu; nunca trava o boot)
 ( SRC="$HOME/Olal"; DEB="$PREFIX/var/lib/proot-distro/installed-rootfs/debian"
   if [ -d "$SRC/.git" ]; then
+    echo ">> Procurando atualizacoes do Olal OS..."
     # reset --hard garante a versao mais nova mesmo com arvore suja / sem fast-forward
-    ( cd "$SRC" && timeout 30 git fetch origin main >/dev/null 2>&1 \
-        && git reset --hard origin/main >/dev/null 2>&1 ) \
-      || ( cd "$SRC" && timeout 25 git pull >/dev/null 2>&1 ) || true
+    if ( cd "$SRC" && timeout 30 git fetch origin main >/dev/null 2>&1 \
+          && git reset --hard origin/main >/dev/null 2>&1 ); then
+      echo ">> Atualizado para: $(cd "$SRC" && git log -1 --format='%h %s' 2>/dev/null)"
+    else
+      echo "!! Nao consegui baixar a atualizacao (rede/VPN?). Usando a versao local."
+      echo "   Dica: desligue a VPN e rode de novo, ela bloqueia o GitHub."
+    fi
     mkdir -p "$DEB/opt/olal/shell"
     cp -rf "$SRC/olal-os/shell/." "$DEB/opt/olal/shell/" 2>/dev/null
     cp -f  "$SRC/olal-os/desktop/olal-shell" "$DEB/usr/local/bin/olal-shell" 2>/dev/null
     chmod +x "$DEB/usr/local/bin/olal-shell" 2>/dev/null
+    grep -o 'OLAL_BUILD = "[^"]*"' "$DEB/opt/olal/shell/index.html" 2>/dev/null \
+      | sed 's/OLAL_BUILD = />> Interface instalada: /'
   fi ) || true
 
 # 1) audio (PulseAudio sobre TCP -> YouTube com som)

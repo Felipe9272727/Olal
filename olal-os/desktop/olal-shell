@@ -7,13 +7,16 @@
 # auto-atualiza a interface do GitHub (best-effort; nao trava se offline/VPN)
 B="https://raw.githubusercontent.com/Felipe9272727/Olal/main/olal-os/shell"
 for f in index.html backend.py model.js; do
-  timeout 12 curl -fsSL "$B/$f" -o "/opt/olal/shell/$f.new" 2>/dev/null && \
-    [ -s "/opt/olal/shell/$f.new" ] && mv "/opt/olal/shell/$f.new" "/opt/olal/shell/$f" || rm -f "/opt/olal/shell/$f.new"
+  if timeout 12 curl -fsSL "$B/$f" -o "/opt/olal/shell/$f.new" 2>/dev/null && [ -s "/opt/olal/shell/$f.new" ]; then
+    mv "/opt/olal/shell/$f.new" "/opt/olal/shell/$f"; echo ">> interface: $f atualizado do GitHub"
+  else rm -f "/opt/olal/shell/$f.new"; fi
 done
+grep -o 'OLAL_BUILD = "[^"]*"' /opt/olal/shell/index.html 2>/dev/null | sed 's/OLAL_BUILD = />> versao da interface: /'
 pkill -f "olal/shell/backend.py" 2>/dev/null
 ( cd /opt/olal/shell && OLAL_PORT=8080 python3 backend.py >/dev/null 2>&1 & )
 sleep 1
-URL="http://localhost:8080/index.html"
+# cache-buster: forca o Firefox a carregar a versao nova (nunca do cache)
+URL="http://localhost:8080/index.html?v=$(date +%s)"
 
 # perfil do Firefox: vai DIRETO pra interface, sem telas de boas-vindas/dialogs
 PROF="$HOME/.olal-ff"; mkdir -p "$PROF"
@@ -27,6 +30,9 @@ user_pref("browser.tabs.warnOnClose", false);
 user_pref("browser.warnOnQuit", false);
 user_pref("media.autoplay.default", 0);
 user_pref("media.autoplay.blocking_policy", 0);
+user_pref("browser.cache.disk.enable", false);
+user_pref("browser.cache.memory.enable", false);
+user_pref("browser.cache.offline.enable", false);
 JS
 
 # tenta um navegador; se ele cair em <6s (crash/tela preta), volta e tenta o proximo
