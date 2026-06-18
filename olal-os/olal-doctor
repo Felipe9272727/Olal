@@ -63,6 +63,19 @@ else
   echo "  (backend nao esta no ar agora - normal se o Olal nao estiver aberto)"
 fi
 
+hr "5) Aceleracao por GPU (Adreno/Turnip)"
+command -v virgl_test_server >/dev/null 2>&1 \
+  && ok "virgl ACELERADO (zink/Turnip) disponivel no Termux" \
+  || bad "so virgl software (rode: pkg install mesa-zink virglrenderer-mesa-zink vulkan-loader-android)"
+# checa o renderer GL DENTRO do Debian (precisa do proot)
+if command -v proot-distro >/dev/null 2>&1; then
+  R=$(timeout 25 proot-distro login debian -- bash -lc \
+      'MESA_LOADER_DRIVER_OVERRIDE=zink TU_DEBUG=noconform glxinfo 2>/dev/null | grep -i "OpenGL renderer" | head -1' 2>/dev/null)
+  if echo "$R" | grep -qi 'zink\|turnip\|adreno'; then ok "navegador usa GPU real: ${R#*: }"
+  elif [ -n "$R" ]; then bad "navegador em software: ${R#*: }  (GPU nao engatou)"
+  else echo "  (nao deu pra checar o GL agora; abra o Olal e veja 'GPU' no app Sistema)"; fi
+fi
+
 hr "Resumo"
 echo "  Se (1) e (2) estao OK mas (3) mostra versao velha no Debian, rode:"
 echo "      cd ~/Olal && git reset --hard origin/main && cd olal-os && ./olal"

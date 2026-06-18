@@ -22,6 +22,9 @@ pkg install -y termux-x11-nightly pulseaudio python
 # mesa-vulkan-icd-freedreno-dri3 vem do tur-repo (igual phoenixbyrd/Termux_XFCE)
 pkg install -y virglrenderer-android mesa-vulkan-icd-freedreno-dri3 || \
   pkg install -y virglrenderer-android || true
+# ACELERACAO REAL: virgl com backend zink->Turnip (GPU da Adreno) acelera o
+# desktop inteiro, inclusive o Firefox. Best-effort (nao aborta se faltar repo).
+pkg install -y mesa-zink virglrenderer-mesa-zink vulkan-loader-android || true
 
 echo ">> [2/4] instalando a base Debian (demora)..."
 proot-distro install debian || echo "   (debian ja instalado)"

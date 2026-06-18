@@ -47,11 +47,22 @@ pulseaudio --start \
   --load="module-native-protocol-tcp auth-ip-acl=127.0.0.1 auth-anonymous=1" \
   --exit-idle-time=-1 2>/dev/null || true
 
-# 2) servidor GPU virtual (virgl) -- env da Adreno; TEM que subir ANTES do X
+# 2) servidor GPU (virgl) ACELERADO POR HARDWARE -- TEM que subir ANTES do X.
+#    Tenta a variante zink->Turnip (GPU real da Adreno), que acelera TODO o
+#    desktop (inclusive o Firefox). Se ela nao existir, cai pro virgl_test_server
+#    _android (software) - exatamente o comportamento antigo, sem regressao.
 pkill -f virgl_test_server 2>/dev/null
-MESA_NO_ERROR=1 MESA_GL_VERSION_OVERRIDE=4.3COMPAT \
-MESA_GLES_VERSION_OVERRIDE=3.2 LIBGL_DRI3_DISABLE=1 \
-  virgl_test_server_android >/dev/null 2>&1 &
+if command -v virgl_test_server >/dev/null 2>&1; then
+  echo ">> GPU: virgl acelerado por zink/Turnip (Adreno)."
+  MESA_LOADER_DRIVER_OVERRIDE=zink GALLIUM_DRIVER=zink ZINK_DESCRIPTORS=lazy \
+  MESA_NO_ERROR=1 MESA_GL_VERSION_OVERRIDE=4.3COMPAT MESA_GLES_VERSION_OVERRIDE=3.2 \
+    virgl_test_server --use-egl-surfaceless >/dev/null 2>&1 &
+else
+  echo ">> GPU: virgl (software) -- instale virglrenderer-mesa-zink p/ acelerar."
+  MESA_NO_ERROR=1 MESA_GL_VERSION_OVERRIDE=4.3COMPAT \
+  MESA_GLES_VERSION_OVERRIDE=3.2 LIBGL_DRI3_DISABLE=1 \
+    virgl_test_server_android >/dev/null 2>&1 &
+fi
 
 # 3) servidor de tela (Termux:X11)
 pkill -f "termux-x11 :0" 2>/dev/null
