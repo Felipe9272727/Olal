@@ -341,7 +341,7 @@ function aiHandle(resp){
 /* ===== ponte com o SISTEMA REAL (backend Olal) - faz o Olal ser um OS ===== */
 /* carimbo de versao: aparece embaixo da home. Se NAO mudar depois de atualizar,
    o update nao chegou na interface (VPN bloqueou o git ou cache do navegador). */
-const OLAL_BUILD = "2026-06-18 • GPU Adreno v7";
+const OLAL_BUILD = "2026-06-18 • GPU + tuning distro v8";
 window.addEventListener("load",()=>{ const e=document.getElementById("build"); if(e) e.textContent="Olal OS  ·  "+OLAL_BUILD; });
 
 const SYS_API = location.origin;
@@ -920,7 +920,9 @@ function appStore(b){
       btn.disabled=true; btn.textContent="instalando…"; btn.classList.add("spin");
       slog.style.display="block"; slog.textContent="📦 Instalando "+nm+" ("+pkg+")…\nIsso pode demorar alguns minutos.\n";
       // atualiza indices e instala; apt pode pedir sudo (no proot somos root)
-      sysExec("sudo apt-get update -y 2>&1 | tail -2; sudo apt-get install -y "+pkg+" 2>&1 | tail -25 || apt-get install -y "+pkg+" 2>&1 | tail -25", null)
+      // PERF: so roda 'apt-get update' se a lista de pacotes estiver velha (>6h);
+      // senao pula direto pra instalacao (o update e a parte lenta).
+      sysExec("if [ -z \"$(find /var/lib/apt/lists -maxdepth 1 -name '*Packages*' -mmin -360 2>/dev/null)\" ]; then sudo apt-get update -y 2>&1 | tail -2; else echo '(lista de pacotes recente, pulando update)'; fi; sudo apt-get install -y --no-install-recommends "+pkg+" 2>&1 | tail -25 || apt-get install -y --no-install-recommends "+pkg+" 2>&1 | tail -25", null)
         .then(d=>{ slog.textContent += (d.out||""); slog.scrollTop=slog.scrollHeight;
           btn.classList.remove("spin");
           return sysExec("command -v "+row.dataset.bin+" >/dev/null && echo OK || echo NO"); })
