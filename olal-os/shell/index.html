@@ -252,12 +252,51 @@ EXEC: <comando bash>     -> roda no sistema; voce recebe a saida real e continua
 APP: <nome>              -> abre um app do Olal (youtube, navegador, calc, notas, terminal, relogio, paint, ola32, sistema, js)
 FINAL: <resposta>        -> quando terminar, responda ao usuario em portugues
 Regras: use EXEC pra QUALQUER coisa do sistema (ver/criar arquivos, instalar com 'apt-get install -y', status, processos, rede, etc.). NUNCA invente a saida - espere a OBSERVACAO. Seja direto e eficiente. Se a tarefa for so conversa, responda direto com FINAL.`;
+/* AGENTE OFFLINE: quando a LLM esta bloqueada (VPN), a IA ainda AGE de
+   verdade - abre apps, roda comandos, instala pacotes, cria arquivos e
+   responde perguntas do sistema, tudo pelo backend local. */
+async function agentOffline(goal, onStep){
+  const t = goal.trim(); let m;
+  // 1) abrir app / tocar / pesquisar / navegar (sem rede)
+  const li = localIntent(t); if(li) return li;
+  if(!SYS_OK) return null;
+  // 2) instalar pacote
+  if((m = t.match(/^\s*instal[ae]r?\s+(?:o\s+|a\s+|pacote\s+)?(.+)/i))){
+    const pk=m[1].trim().replace(/\s+/g,' '); onStep&&onStep("$ apt-get install -y "+pk);
+    try{ const r=await sysExec("sudo apt-get install -y "+pk+" 2>&1 || apt-get install -y "+pk);
+      return "📦 "+(/newly installed|already the newest|instala/i.test(r.out||"")?'"'+pk+'" pronto.':((r.out||"").trim().split("\n").slice(-2).join(" ")||"feito.")); }
+    catch(e){ return "nao consegui instalar agora ("+e.message+")."; } }
+  // 3) criar/escrever arquivo ou nota:  "cria o arquivo X com Y" / "anota Y"
+  if((m = t.match(/^\s*(?:cri[ae]r?|escrev[ae]r?)\s+(?:o\s+|um\s+|a\s+)?(?:arquivo|nota|texto)\s+(\S+)(?:\s+com\s+(.+))?/i))){
+    const fn=m[1], body=(m[2]||"").trim(); onStep&&onStep("$ escrevendo "+fn);
+    try{ await sysExec("printf %s "+JSON.stringify(body)+" > "+JSON.stringify("$HOME/"+fn)); return "📝 criei ~/"+fn+(body?" com seu texto.":" (vazio)."); }
+    catch(e){ return "nao consegui criar o arquivo."; } }
+  if((m = t.match(/^\s*(?:anot[ae]r?|lembr[ae]r?(?:-me)?(?:\s+de)?)\s+(.+)/i))){
+    const note=m[1].trim(); onStep&&onStep("$ salvando nota");
+    try{ await sysExec("printf '%s\\n' "+JSON.stringify(note)+" >> "+JSON.stringify("$HOME/notas-olal.txt")); return "📝 anotei em ~/notas-olal.txt"; }
+    catch(e){ return "nao consegui anotar."; } }
+  // 4) perguntas comuns do sistema (memoria, disco, ip, processos...)
+  const SQ2=[[/(mem[oó]ria|ram)/,"free -h | awk '/Mem:/{print $3\" de \"$2}'","🧠"],
+    [/(disco|armazenamento|espa[çc]o)/,"df -h \"$HOME\" | awk 'NR==2{print $3\" de \"$2\" (\"$5\")\"}'","💾"],
+    [/(processos)/,"ps -e --no-headers | wc -l","⚙️ processos:"],[/(uptime|ligad)/,"uptime -p","⏱️"],
+    [/(meu ip|\bip\b)/,"hostname -I | awk '{print $1}'","🌐"],[/(kernel)/,"uname -r","🐧"]];
+  for(const [re,cmd,lbl] of SQ2){ if(re.test(t.toLowerCase())){
+    try{ const r=await sysExec(cmd); return lbl+" "+((r.out||"").trim()||"?"); }catch(e){} } }
+  // 5) parece um comando shell? roda direto.
+  if(/^[a-z][a-z0-9_-]*(\s|$)/i.test(t) && /\b(ls|cat|echo|pwd|df|free|ps|uname|whoami|date|apt|cd|mkdir|rm|cp|mv|grep|find|top|kill|ping|curl|wget|git|python3?|node|nano|touch)\b/.test(t)){
+    onStep&&onStep("$ "+t); try{ const r=await sysExec(t); return "$ "+t+"\n"+((r.out||"(sem saida)").trim().slice(0,1500)); }catch(e){} }
+  return null;
+}
 async function aiAgent(goal, onStep){
   let convo = AGENT_SYS + "\n\nTarefa do usuario: " + goal + "\n";
   for(let step=0; step<6; step++){
     let out;
     try{ out = await aiLLM(convo); }
-    catch(e){ return "A IA online nao respondeu (sua rede/VPN pode bloquear - desligue a VPN). Posso rodar comandos diretos: \"rode <comando>\"."; }
+    catch(e){
+      // LLM bloqueada (VPN): cai pro agente OFFLINE, que ainda age de verdade.
+      const off = await agentOffline(goal, onStep);
+      return off || "A IA online esta bloqueada (sua VPN/rede recusa o acesso - tente DESLIGAR a VPN). Mesmo offline eu controlo o sistema: \"abre a calculadora\", \"instala htop\", \"anota comprar pao\", \"rode ls -la\", \"quanta memoria tem\".";
+    }
     const line = (out.split("\n").find(l=>/^\s*(EXEC|APP|FINAL)\s*:/i.test(l)) || out).trim();
     let m;
     if((m = line.match(/^FINAL\s*:\s*([\s\S]+)/i))) return m[1].trim();
