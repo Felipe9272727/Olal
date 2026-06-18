@@ -119,12 +119,18 @@ screen_bright(){ import -window root -silent /tmp/olal-probe.png 2>/dev/null \
 run_browser(){ local label="$1"; shift
   echo ">> tentando: $label"
   "$@" >/dev/null 2>&1 & local pid=$!
-  local t=0 ok=0
-  while [ $t -lt 12 ]; do sleep 1; t=$((t+1))
+  # IMPORTANTE: o Firefox demora ~15-20s pra renderizar a frio. Por isso a
+  # janela do detector vai ate 35s (antes era 12s e MATAVA o Firefox no meio
+  # do boot, achando que era tela preta -> cascata ate dar preto). Qualquer
+  # brilho > 8 (ate a tela branca de carregando) ja conta como "vivo, vai
+  # renderizar"; so o PRETO persistente apos 35s e tratado como falha.
+  local t=0 ok=0 maxt=12
+  [ "$HAVE_SHOT" = 1 ] && maxt=35
+  while [ $t -lt $maxt ]; do sleep 1; t=$((t+1))
     kill -0 "$pid" 2>/dev/null || { echo "   ($label caiu)"; return 1; }
-    if [ $t -ge 6 ] && [ "$HAVE_SHOT" = 1 ]; then
+    if [ $t -ge 7 ] && [ "$HAVE_SHOT" = 1 ]; then
       local b; b=$(screen_bright)
-      if [ -n "$b" ] && [ "$b" -gt 10 ] 2>/dev/null; then ok=1; break; fi
+      if [ -n "$b" ] && [ "$b" -gt 8 ] 2>/dev/null; then ok=1; break; fi
     fi
   done
   [ "$HAVE_SHOT" = 1 ] || { kill -0 "$pid" 2>/dev/null && ok=1; }
