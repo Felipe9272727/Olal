@@ -30,18 +30,19 @@ apt-get install -y --no-install-recommends \
     python3 git build-essential nano wget curl ca-certificates \
     fonts-dejavu fonts-noto-core fonts-noto-color-emoji || true
 
-# ---------- tuning do sistema: pre-gera caches, desliga servicos pesados ----------
-# cache de fontes (1o boot do navegador nao trava montando fontes)
+# ---------- tuning do sistema (so o que REALMENTE funciona no proot) ----------
+# OBS: no proot SEM root nao ha systemd nem PAM, entao `systemctl disable`,
+# `sysctl` e `/etc/security/limits.conf` NAO tem efeito (sao ignorados). Por
+# isso nao usamos esses (era cargo-cult). O que funciona de verdade:
+# 1) cache de fontes (1o boot do navegador nao trava montando fontes)
 fc-cache -f >/dev/null 2>&1 || true
-# desabilita servicos que nao fazem sentido num "OS" mobile/termux (e gastam CPU/IO)
-for svc in cups bluetooth exim4 rsync avahi-daemon cron atd anacron apt-daily.timer apt-daily-upgrade.timer; do
-  systemctl disable "$svc" 2>/dev/null || true
-  systemctl mask "$svc" 2>/dev/null || true
-done
-# limits: mais arquivos abertos, melhor pra I/O do navegador
-printf '* soft nofile 8192\n* hard nofile 65536\n' > /etc/security/limits.d/99-olal.conf 2>/dev/null || true
-# swap: nao tem swap real no proot, mas zram-like (drop_caches agressivo para RAM baixa)
-printf 'vm.swappiness=10\nvm.vfs_cache_pressure=200\nvm.dirty_background_ratio=5\nvm.dirty_ratio=15\n' > /etc/sysctl.d/99-olal.conf 2>/dev/null || true
+# 2) desliga as tarefas periodicas do apt (essa config E lida pelo apt mesmo
+#    sem systemd) -> nada de update/upgrade automatico comendo CPU/IO
+printf 'APT::Periodic::Enable "0";\nAPT::Periodic::Update-Package-Lists "0";\nAPT::Periodic::Unattended-Upgrade "0";\n' > /etc/apt/apt.conf.d/99olal-noperiodic
+# 3) ulimit de arquivos abertos: aplicado por shell (funciona no proot, ao
+#    contrario do limits.conf) -> bom pro navegador
+grep -q 'ulimit -n' /etc/profile.d/olal.sh 2>/dev/null || \
+  echo 'ulimit -n 8192 2>/dev/null || true' >> /etc/profile.d/olal-ulimit.sh
 
 # ---------- identidade e apps do Olal ----------
 mkdir -p /opt/olal
