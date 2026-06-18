@@ -305,20 +305,26 @@ const APPS = [
    inclusive firefox-esr antigo onde 'zoom' nao existe) */
 const screenEl=document.getElementById("screen");
 const DW=400;                                     // largura de design (celular)
+let userScale=parseFloat(localStorage.getItem("olal_scale")||"1")||1;
 function olalApply(){
-  const w=window.innerWidth||screen.width, h=window.innerHeight||screen.height;
-  const s=Math.max(0.4, w/DW);
+  const w=window.innerWidth||document.documentElement.clientWidth||screen.width;
+  const h=window.innerHeight||document.documentElement.clientHeight||screen.height;
+  const s=Math.max(0.3, (w/DW)*userScale);
   screenEl.style.width=DW+"px";
   screenEl.style.height=(h/s)+"px";
   screenEl.style.transform="scale("+s+")";
 }
+function setScale(mult){ userScale=Math.min(2.2,Math.max(0.5, userScale*mult));
+  localStorage.setItem("olal_scale",userScale.toFixed(3)); olalApply(); }
+function resetScale(){ userScale=1; localStorage.setItem("olal_scale","1"); olalApply(); }
 olalApply();
 window.addEventListener("resize",olalApply);
 window.addEventListener("orientationchange",olalApply);
 window.addEventListener("load",olalApply);
-/* re-aplica nos primeiros segundos (o Firefox no Termux:X11 pode reportar a
-   largura atrasado) */
-[80,200,500,1000,2000].forEach(t=>setTimeout(olalApply,t));
+/* re-aplica nos primeiros segundos + a cada 1s no inicio (o Firefox no
+   Termux:X11 pode reportar a largura atrasado) */
+[80,200,500,1000,2000,3500].forEach(t=>setTimeout(olalApply,t));
+let _fitN=0, _fitIv=setInterval(()=>{ olalApply(); if(++_fitN>8) clearInterval(_fitIv); },800);
 
 /* efeito ripple ao tocar (toda a interface fica mais "viva") */
 document.addEventListener("pointerdown",e=>{
@@ -659,6 +665,14 @@ function appConfig(b){
         <div style="width:22px;height:22px;border-radius:50%;background:#2BD17A"></div></div>
       <div><div style="font-size:24px;font-weight:800">Olal OS</div>
       <div style="color:#94a3b8;font-size:13px">versão 1.0 · Linux real, movido por IA</div></div></div>
+    <div style="background:#16203a;border-radius:16px;padding:16px">
+      <div style="font-weight:700;margin-bottom:4px">Tamanho da interface</div>
+      <div style="color:#94a3b8;font-size:13px;margin-bottom:12px">Se a tela parecer pequena ou grande demais, ajuste aqui.</div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button class="btn s" style="flex:1;font-size:22px" onclick="setScale(0.9)">A−</button>
+        <button class="btn s" style="flex:1" onclick="resetScale()">Auto</button>
+        <button class="btn s" style="flex:1;font-size:22px" onclick="setScale(1.1)">A+</button>
+      </div></div>
     <button class="btn" style="width:100%" onclick="openApp(14)">▦ Programas instalados</button>
     <button class="btn g" style="width:100%" onclick="aiOpen()">🤖 Falar com a Olal AI</button>
     <button class="btn r" style="width:100%" onclick="powerMenu(true)">⏻ Energia</button>
