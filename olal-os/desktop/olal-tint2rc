@@ -1,0 +1,89 @@
+# ============================================================
+#  Olal OS - config do tint2 (barra do topo).
+#  Minimalista e mobile-like: 28px no topo, transparente,
+#  so com o botao "Olal" (volta pra interface) e a lista de
+#  janelas abertas. Sem relogio (ja tem na interface do Olal),
+#  sem system tray, sem launchers. Pura taskbar.
+# ============================================================
+
+# ----- aspecto geral -----
+rounded = 0
+border_width = 0
+background_color = #0B1220 100
+border_color = #0B1220 0
+
+# o painel em si
+panel_items = LSB
+panel_monitor = all
+panel_position = top center horizontal
+panel_size = 100% 28
+panel_margin = 0 0
+panel_padding = 6 0 4
+panel_background_id = 0
+# DOCK mode: o painel e tratado como um dock pelo WM. As janelas maximizadas
+# NAO cobrem a area do dock. Assim a barra do Olal fica sempre visivel,
+# mesmo com o navegador kiosk ou apps baixados em fullscreen.
+panel_dock = 1
+wm_menu = 0
+
+# ----- botao "Olal" (Launcher) -----
+# executa olal-back: traz o navegador do Olal pra frente (Firefox/Chromium).
+launcher_item_app = /usr/share/applications/olal-back.desktop
+launcher_padding = 4 0 6
+launcher_background_id = 1
+launcher_icon_size = 20
+
+# ----- taskbar (janelas abertas) -----
+taskbar_mode = multi_desktop
+taskbar_padding = 2 0 4
+taskbar_background_id = 0
+taskbar_active_background_id = 0
+taskbar_name = 0
+taskbar_distribute_size = 1
+taskbar_sort_order = title
+
+# cada item de janela
+task_text = 1
+task_icon = 10
+task_centered = 1
+task_maximum_size = 140 24
+task_padding = 6 1
+task_background_id = 0
+task_active_background_id = 2
+
+# cores do texto das janelas
+task_normalized_font_color = #94A3B8 100
+task_active_font_color = #2BD17A 100
+task_urgent_font_color = #EF4444 100
+task_font = Sans 9
+
+# fonte/color do texto
+tooltip = 0
+font_shadow = 0
+
+# ----- backgrounds (0=transparente, 1=botao Olal, 2=item ativo) -----
+# 0: fundo transparente (a barra em si)
+background_id = 0
+# ID 1: botao Olal - fundo azul, hover mais claro
+background_id = 1
+background_color = #4F46E5 100
+# ID 2: janela ativa - fundo sutilmente mais escuro
+background_id = 2
+background_color = #16203A 100
+
+# nao queremos soms de mouse desnecessarios
+mouse_left = toggle
+mouse_middle = none
+mouse_right = close
+
+# auto-hide: a barra SOME apos 2s e volta quando o mouse passa no topo
+# (mobile-like: maximiza o espaco util das apps, mas a barra sempre
+#  acessivel - essencial pra UX de "voltar pro Olal")
+autohide_hide_timeout = 2.0
+autohide_show_timeout = 0.1
+autohide = 1
+strut_policy = follow_size
+
+# -----性能: sem animations, sem shadows, redraws minimos -----
+cpu_avg = 0
+battery_hide = 0

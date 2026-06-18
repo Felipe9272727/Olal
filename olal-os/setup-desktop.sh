@@ -1,32 +1,48 @@
 #!/bin/bash
 # ============================================================
 #  Olal OS - setup do desktop (roda DENTRO do Debian via proot).
-#  Instala o XFCE, o Firefox e a identidade/apps do Olal.
+#  Instala o WM (openbox) + navegador + GPU + a IDENTIDADE e os
+#  apps do Olal. So isso: o desktop E o Olal.
 # ============================================================
 set -e
 export DEBIAN_FRONTEND=noninteractive
 
-echo ">> atualizando o Debian..."
+echo ">> atualizando o Debian (apt configurado pra ser leve)..."
+# tuning do apt/dpkg ANTES do install (ja vale pra essa passada)
+printf 'APT::Install-Recommends "false";\nAPT::Install-Suggests "false";\nAcquire::Languages "none";\nAcquire::Retries "2";\nDPkg::Options {"--force-confold";};\n' > /etc/apt/apt.conf.d/99olal
+printf 'path-exclude /usr/share/doc/*\npath-exclude /usr/share/man/*\npath-exclude /usr/share/info/*\npath-exclude /usr/share/locale/*/LC_MESSAGES/*.mo\n' > /etc/dpkg/dpkg.cfg.d/99olal-nodoc
 apt-get update -y; apt-get upgrade -y || true
 
-echo ">> instalando o Olal OS: WM minimo (openbox) + navegador + GPU..."
-# Olal E a interface (nao usamos um desktop XFCE). Openbox so gerencia janelas.
+echo ">> instalando o Olal OS: WM minimo + app integration + navegador + GPU..."
+# PACOTES:
+#  - openbox: WM (so gerencia janelas, maximiza tudo, sem decoracao -> mobile-like)
+#  - tint2: barra do topo (botao Olal + lista de janelas abertas)
+#  - wmctrl + xdotool: integracao de apps (focus/lista/launch_integrated no backend)
+#  - firefox-esr + chromium: navegadores (Firefox = software garantido,
+#    Chromium = GPU acelerada por Turnip/zink)
+#  - mesa/vulkan: drivers (virgl no desktop, Turnip na Adreno)
 apt-get install -y --no-install-recommends \
-    openbox \
+    openbox tint2 wmctrl xdotool \
     firefox-esr chromium \
     dbus-x11 x11-xserver-utils \
     mesa-utils mesa-vulkan-drivers libvulkan1 vulkan-tools libgl1-mesa-dri \
     pulseaudio-utils imagemagick \
-    python3 git build-essential nano wget curl \
+    python3 git build-essential nano wget curl ca-certificates \
     fonts-dejavu fonts-noto-core fonts-noto-color-emoji || true
-# o Firefox renderiza pelo mesmo caminho GTK/X11 do desktop (mais confiavel
-# que o Chromium); o Chromium fica como alternativa acelerada por zink.
 
-# ---------- tuning do sistema: apt/dpkg mais leve e rapido + cache de fontes ----------
-printf 'APT::Install-Recommends "false";\nAPT::Install-Suggests "false";\nAcquire::Languages "none";\n' > /etc/apt/apt.conf.d/99olal
-printf 'path-exclude /usr/share/doc/*\npath-exclude /usr/share/man/*\npath-exclude /usr/share/info/*\npath-exclude /usr/share/locale/*/LC_MESSAGES/*.mo\n' > /etc/dpkg/dpkg.cfg.d/99olal-nodoc
-# pre-gera o cache de fontes (1o boot do navegador nao trava montando fontes)
+# ---------- tuning do sistema (so o que REALMENTE funciona no proot) ----------
+# OBS: no proot SEM root nao ha systemd nem PAM, entao `systemctl disable`,
+# `sysctl` e `/etc/security/limits.conf` NAO tem efeito (sao ignorados). Por
+# isso nao usamos esses (era cargo-cult). O que funciona de verdade:
+# 1) cache de fontes (1o boot do navegador nao trava montando fontes)
 fc-cache -f >/dev/null 2>&1 || true
+# 2) desliga as tarefas periodicas do apt (essa config E lida pelo apt mesmo
+#    sem systemd) -> nada de update/upgrade automatico comendo CPU/IO
+printf 'APT::Periodic::Enable "0";\nAPT::Periodic::Update-Package-Lists "0";\nAPT::Periodic::Unattended-Upgrade "0";\n' > /etc/apt/apt.conf.d/99olal-noperiodic
+# 3) ulimit de arquivos abertos: aplicado por shell (funciona no proot, ao
+#    contrario do limits.conf) -> bom pro navegador
+grep -q 'ulimit -n' /etc/profile.d/olal.sh 2>/dev/null || \
+  echo 'ulimit -n 8192 2>/dev/null || true' >> /etc/profile.d/olal-ulimit.sh
 
 # ---------- identidade e apps do Olal ----------
 mkdir -p /opt/olal
@@ -41,9 +57,51 @@ cd /root
 
 # wallpaper + icone + lancadores + wrapper
 cp olal-src/olal-os/desktop/wallpaper.png /opt/olal/wallpaper.png 2>/dev/null || true
-cp olal-src/olal-os/desktop/icon.png /opt/olal/icon.png 2>/dev/null || true
+cp olal-src/olal-os/desktop/icon.png      /opt/olal/icon.png      2>/dev/null || true
 cp olal-src/olal-os/desktop/*.desktop /usr/share/applications/ 2>/dev/null || true
 install -m755 olal-src/olal-os/desktop/olal-shell /usr/local/bin/olal-shell 2>/dev/null || true
+
+# ---------- CONFIGURACOES DO WM E DA BARRA (integracao de apps) ----------
+mkdir -p /etc/olal /root/.config/openbox /root/.config/tint2
+[ -f olal-src/olal-os/desktop/olal-rc.xml ] && \
+  cp olal-src/olal-os/desktop/olal-rc.xml /root/.config/openbox/rc.xml && \
+  cp olal-src/olal-os/desktop/olal-rc.xml /etc/olal/openbox-rc.xml
+[ -f olal-src/olal-os/desktop/olal-tint2rc ] && \
+  cp olal-src/olal-os/desktop/olal-tint2rc /root/.config/tint2/tint2rc && \
+  cp olal-src/olal-os/desktop/olal-tint2rc /etc/olal/tint2rc
+# menu.xml vazio pro openbox (nao usamos menu de botao direito - mobile-like)
+cat > /root/.config/openbox/menu.xml <<'X'
+<openbox_menu><menu id="root-menu" label="Olal"></menu></openbox_menu>
+X
+
+# ---------- botao "Olal" da barra (volta pra interface do Olal) ----------
+# Launcher do tint2 chama este .desktop -> chama olal-back -> traz navegador
+# do Olal (Firefox/Chromium) de volta para frente, mesmo com apps abertos.
+cat > /usr/local/bin/olal-back <<'SH'
+#!/bin/bash
+# traz o navegador do Olal de volta para frente. Tenta firefox -> chromium.
+# (chamado pela barra do Olal no topo - botao "Olal")
+for win in $(wmctrl -lx 2>/dev/null | awk '/[Ff]irefox|firefox-esr/ {print $1; exit}'); do
+  wmctrl -ia "$win" 2>/dev/null && exit 0
+done
+for win in $(wmctrl -lx 2>/dev/null | awk '/[Cc]hromium/ {print $1; exit}'); do
+  wmctrl -ia "$win" 2>/dev/null && exit 0
+done
+# fallback: se nao tem navegador do Olal aberto, abre o shell
+olal-shell 2>/dev/null &
+exit 0
+SH
+chmod +x /usr/local/bin/olal-back
+cat > /usr/share/applications/olal-back.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Olal
+Exec=olal-back
+Icon=go-home
+Terminal=false
+NoDisplay=true
+StartupNotify=false
+EOF
 
 cat > /etc/profile.d/olal.sh <<'SH'
 if [ -t 1 ]; then echo "  Olal OS (Debian) - comandos: ola32 | olal-shell | gpu-test"; fi
@@ -76,6 +134,12 @@ MESA_LOADER_DRIVER_OVERRIDE=zink glxinfo 2>/dev/null | grep -i "OpenGL renderer"
 command -v firefox-esr >/dev/null && ok "Firefox instalado" || no "Firefox"
 command -v chromium >/dev/null && ok "Chromium instalado" || no "Chromium"
 command -v python3 >/dev/null && ok "python3" || no "python3"
+command -v wmctrl   >/dev/null && ok "wmctrl (integracao de apps)" || no "wmctrl (rode: apt install wmctrl)"
+command -v xdotool  >/dev/null && ok "xdotool (integracao de apps)" || no "xdotool (rode: apt install xdotool)"
+command -v tint2    >/dev/null && ok "tint2 (barra do Olal)" || no "tint2 (rode: apt install tint2)"
+[ -f /root/.config/openbox/rc.xml ] && ok "openbox configurado (maximize-all)" || no "openbox sem config (apps abrem em janelas)"
+[ -f /root/.config/tint2/tint2rc ] && ok "tint2 configurado (barra do Olal)" || no "tint2 sem config"
+[ -f /usr/local/bin/olal-back ] && ok "botao Olal (volta pra interface)" || no "botao Olal (olal-back)"
 [ -f /opt/olal/shell/index.html ] && ok "interface do Olal presente" || no "shell do Olal (/opt/olal/shell)"
 command -v ola32 >/dev/null && ok "OLA-32 (nossa CPU)" || no "OLA-32"
 echo "======================="
@@ -106,7 +170,6 @@ EOF
 
 # ---------- IDENTIDADE DE OS: o sistema se chama Olal OS, nao Debian ----------
 echo "Olal OS 1.0" > /etc/olal-release
-# os-release (o que neofetch/fastfetch e o sistema leem)
 cat > /etc/os-release <<'EOF'
 PRETTY_NAME="Olal OS 1.0 (movido por IA)"
 NAME="Olal OS"

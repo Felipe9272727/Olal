@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ============================================================
+     Olal OS - configuracao do Openbox (WM minimo).
+     Politica MOBILE-LIKE: todas as janelas abrem MAXIMIZADAS,
+     SEM decoracao (sem barra de titulo/bordas), ocupando a tela
+     inteira. Apps baixados viram "telas" integradas, nao janelas
+     flutuantes - assim o Olal parece um SO de celular, nao um
+     desktop X11 antigo.
+
+     A barra do Olal (tint2) fica no topo, ACIMA de tudo (mesmo
+     de janelas fullscreen do kiosk), com o botao "Olal" para
+     voltar a interface.
+     ============================================================ -->
+<openbox_config xmlns="http://openbox.org/3.4/rc">
+  <resistance><strength>1</strength><screen_edge_strength>1</screen_edge_strength></resistance>
+  <focus>
+    <focusNew>yes</focusNew>
+    <followMouse>no</followMouse>
+    <focusLast>yes</focusLast>
+    <underMouse>no</underMouse>
+    <focusDelay>0</focusDelay>
+    <raiseOnFocus>yes</raiseOnFocus>
+  </focus>
+  <placement>
+    <policy>UnderMouse</policy>
+    <center>yes</center>
+    <monitor>Any</monitor>
+  </placement>
+  <theme>
+    <name>Clearlooks</name>
+    <titleLayout>NLIMC</titleLayout>
+    <keepBorder>no</keepBorder>
+    <animateIconify>no</animateIconify>
+    <font place="ActiveWindow"><name>Sans</name><size>8</size></font>
+    <font place="InactiveWindow"><name>Sans</name><size>8</size></font>
+  </theme>
+
+  <!-- MARGENS: 0 em todos os lados. A barra do Olal (tint2) tem
+       layer=above, entao fica por cima das janelas maximizadas.
+       Nao precisa de margem. -->
+  <margins top="0" bottom="0" left="0" right="0"/>
+
+  <dock><position>Top</position><stacking>Above</stacking></dock>
+
+  <keyboard>
+    <keybind key="A-Escape"><action name="Lower"/><action name="FocusToBottom"/><action name="Focus"/></keybind>
+    <keybind key="A-F4"><action name="Close"/></keybind>
+  </keyboard>
+
+  <mouse>
+    <context name="Frame">
+      <mousebind button="A-Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+      <mousebind button="A-Left" action="Drag"><action name="Move"/></mousebind>
+    </context>
+    <context name="Client">
+      <mousebind button="Left" action="Press"><action name="Focus"/><action name="Raise"/></mousebind>
+    </context>
+  </mouse>
+
+  <menu><file>menu.xml</file><hideDelay>200</hideDelay></menu>
+
+  <applications>
+    <!-- REGRA GLOBAL: TODA janela NORMAL (tipo=normal) que abre ganha:
+         MaximizeFull (tela inteira), Undecorate (sem barra de titulo nem
+         bordas), Focus (vem pra frente).
+         Exceto: dockapps, paineis, a barra do Olal (tint2) e o navegador
+         kiosk do Olal (Firefox/Chromium em kiosk, que ja e fullscreen). -->
+    <application type="normal">
+      <decor>no</decor>
+      <maximized>yes</maximized>
+      <focus>yes</focus>
+      <layer>normal</layer>
+    </application>
+
+    <!-- Barra do Olal (tint2): sempre no topo, ACIMA de tudo (inclusive
+         janelas fullscreen do navegador kiosk). Sem decoracao. -->
+    <application name="tint2" class="Tint2">
+      <decor>no</decor>
+      <maximized>no</maximized>
+      <focus>no</focus>
+      <layer>above</layer>
+      <position><x>0</x><y>0</y></position>
+    </application>
+
+    <!-- Firefox/Chromium em modo kiosk: ja sao fullscreen por si mesmos.
+         Nao forca maximize (pode conflitar com kiosk). Apenas remove
+         decoracao e foca. -->
+    <application name="firefox*" class="Firefox*">
+      <decor>no</decor>
+      <focus>yes</focus>
+      <layer>normal</layer>
+    </application>
+    <application name="chromium*" class="Chromium*">
+      <decor>no</decor>
+      <focus>yes</focus>
+      <layer>normal</layer>
+    </application>
+  </applications>
+</openbox_config>

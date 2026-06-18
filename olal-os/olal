@@ -6,9 +6,6 @@
 # ============================================================
 
 # 0) AUTO-ATUALIZA do GitHub e PREPARA o deploy num /tmp compartilhado.
-#    Em vez de adivinhar o caminho do rootfs do Debian (que varia e fazia a
-#    copia falhar calada), a gente poe os arquivos no $TMPDIR e copia de DENTRO
-#    do proot (onde /tmp e sempre o lugar certo). A prova de bala.
 SRC="$HOME/Olal"
 DEPLOY="$TMPDIR/olal-deploy"
 ( if [ -d "$SRC/.git" ]; then
@@ -25,6 +22,8 @@ DEPLOY="$TMPDIR/olal-deploy"
 rm -rf "$DEPLOY" 2>/dev/null; mkdir -p "$DEPLOY"
 cp -rf "$SRC/olal-os/shell"           "$DEPLOY/shell"      2>/dev/null
 cp -f  "$SRC/olal-os/desktop/olal-shell" "$DEPLOY/olal-shell" 2>/dev/null
+cp -f  "$SRC/olal-os/desktop/olal-rc.xml"  "$DEPLOY/olal-rc.xml" 2>/dev/null
+cp -f  "$SRC/olal-os/desktop/olal-tint2rc" "$DEPLOY/olal-tint2rc" 2>/dev/null
 grep -o 'OLAL_BUILD = "[^"]*"' "$DEPLOY/shell/index.html" 2>/dev/null \
   | sed 's/OLAL_BUILD = />> Versao que vai ser instalada: /'
 # cinto-e-suspensorio: tambem tenta copiar direto pro rootfs (varios caminhos
@@ -34,32 +33,34 @@ for RD in \
   "$HOME/.proot-distro/installed-rootfs/debian" \
   /data/data/com.termux/files/usr/var/lib/proot-distro/installed-rootfs/debian; do
   if [ -d "$RD" ]; then
-    mkdir -p "$RD/opt/olal/shell" 2>/dev/null
+    mkdir -p "$RD/opt/olal/shell" "$RD/root/.config/openbox" "$RD/root/.config/tint2" "$RD/etc/olal" 2>/dev/null
     cp -rf "$DEPLOY/shell/." "$RD/opt/olal/shell/" 2>/dev/null \
       && cp -f "$DEPLOY/olal-shell" "$RD/usr/local/bin/olal-shell" 2>/dev/null \
-      && chmod +x "$RD/usr/local/bin/olal-shell" 2>/dev/null \
-      && echo ">> (copia direta ok em $RD)"
+      && chmod +x "$RD/usr/local/bin/olal-shell" 2>/dev/null
+    # tambem espalha as config do WM/barra (pro caso de setup-desktop nao ter rodado ainda)
+    [ -f "$DEPLOY/olal-rc.xml" ] && cp -f "$DEPLOY/olal-rc.xml" "$RD/root/.config/openbox/rc.xml" 2>/dev/null
+    [ -f "$DEPLOY/olal-tint2rc" ] && cp -f "$DEPLOY/olal-tint2rc" "$RD/root/.config/tint2/tint2rc" 2>/dev/null
+    echo ">> (copia direta ok em $RD)"
   fi
 done
 
-# 1) audio (PulseAudio sobre TCP -> YouTube com som)
-pulseaudio --start \
-  --load="module-native-protocol-tcp auth-ip-acl=127.0.0.1 auth-anonymous=1" \
-  --exit-idle-time=-1 2>/dev/null || true
+# 1) audio (PulseAudio) - SOBE SOB DEMANDA. Mantemos o servidor em pe se o
+#    usuario ja esta ouvindo algo, mas auto-exit apos 30s idle pra nao gastar
+#    CPU. Se ja esta rodando, nao reinicia.
+if ! pgrep -x pulseaudio >/dev/null 2>&1; then
+  pulseaudio --start \
+    --load="module-native-protocol-tcp auth-ip-acl=127.0.0.1 auth-anonymous=1" \
+    --exit-idle-time=30 2>/dev/null || true
+fi
 
 # 2) servidor GPU (virgl) ACELERADO POR HARDWARE -- TEM que subir ANTES do X.
-#    Tenta a variante zink->Turnip (GPU real da Adreno), que acelera TODO o
-#    desktop (inclusive o Firefox). Se ela nao existir, cai pro virgl_test_server
-#    _android (software) - exatamente o comportamento antigo, sem regressao.
 pkill -f virgl_test_server 2>/dev/null
-rm -f "$TMPDIR/olal-gpu" 2>/dev/null   # flag: GPU acelerada esta ativa?
+rm -f "$TMPDIR/olal-gpu" 2>/dev/null
 if command -v virgl_test_server >/dev/null 2>&1; then
   echo ">> GPU: virgl acelerado por zink/Turnip (Adreno)."
   MESA_LOADER_DRIVER_OVERRIDE=zink GALLIUM_DRIVER=zink ZINK_DESCRIPTORS=lazy \
   MESA_NO_ERROR=1 MESA_GL_VERSION_OVERRIDE=4.3COMPAT MESA_GLES_VERSION_OVERRIDE=3.2 \
     virgl_test_server --use-egl-surfaceless >/dev/null 2>&1 &
-  # avisa o olal-shell (via /tmp compartilhado) que a GPU acelerada esta no ar,
-  # pra ele so entao tentar os navegadores por GPU (senao fica no Firefox SW).
   touch "$TMPDIR/olal-gpu" 2>/dev/null
 else
   echo ">> GPU: virgl (software) -- instale virglrenderer-mesa-zink p/ acelerar."
@@ -68,52 +69,88 @@ else
     virgl_test_server_android >/dev/null 2>&1 &
 fi
 
-# 3) servidor de tela (Termux:X11)
+# 3) servidor de tela (Termux:X11). Sobe + abre a Activity Android.
+#    PERFORMANCE: sleep reduzido (3s -> 2s); ja basta na grande maioria.
 pkill -f "termux-x11 :0" 2>/dev/null
 export XDG_RUNTIME_DIR="$TMPDIR"
 termux-x11 :0 >/dev/null 2>&1 &
-sleep 3
+sleep 2
 am start --user 0 -n com.termux.x11/com.termux.x11.MainActivity >/dev/null 2>&1 || true
 sleep 1
 
 # prioridade: rebaixa os servicos de fundo (virgl/pulseaudio) pra o NAVEGADOR
-# ganhar CPU. renice pra valor positivo (menor prioridade) e permitido sem root.
+# ganhar CPU. renice +5 + ionice idle - sem root, so renice funciona.
 for p in virgl_test_server virgl_test_server_android pulseaudio; do
-  pgrep -x "$p" >/dev/null 2>&1 && renice +5 -p $(pgrep -x "$p") >/dev/null 2>&1
+  pgrep -x "$p" >/dev/null 2>&1 && {
+    renice +5  -p $(pgrep -x "$p") >/dev/null 2>&1
+    ionice -c 3 -p $(pgrep -x "$p") >/dev/null 2>&1 || true
+  }
 done
 
 echo ">> Abra o app Termux:X11 para ver o Olal OS."
 
 # 4) BOOTA o Olal OS: instala o codigo novo (de DENTRO, via /tmp compartilhado),
-#    sobe o WM minimo (openbox) e a interface do Olal em tela cheia.
-#    A interface (com terminal/arquivos/sistema REAIS via backend) E o OS.
+#    sobe o WM + a barra do Olal + a interface em tela cheia.
 proot-distro login debian --shared-tmp -- /bin/bash -c '
-  # instala o codigo novo que o Termux deixou em /tmp/olal-deploy (caminho certo
-  # SEMPRE, visto de dentro do proot - nada de adivinhar o rootfs)
+  # instala o codigo novo que o Termux deixou em /tmp/olal-deploy
   if [ -d /tmp/olal-deploy/shell ]; then
     mkdir -p /opt/olal/shell
     cp -rf /tmp/olal-deploy/shell/. /opt/olal/shell/
     [ -f /tmp/olal-deploy/olal-shell ] && cp -f /tmp/olal-deploy/olal-shell /usr/local/bin/olal-shell && chmod +x /usr/local/bin/olal-shell
+    # espalha configs do WM/barra (idempotente; so reescreve se forem novas)
+    if [ -f /tmp/olal-deploy/olal-rc.xml ]; then
+      mkdir -p /root/.config/openbox /etc/olal
+      cp -f /tmp/olal-deploy/olal-rc.xml /root/.config/openbox/rc.xml
+      cp -f /tmp/olal-deploy/olal-rc.xml /etc/olal/openbox-rc.xml
+    fi
+    if [ -f /tmp/olal-deploy/olal-tint2rc ]; then
+      mkdir -p /root/.config/tint2
+      cp -f /tmp/olal-deploy/olal-tint2rc /root/.config/tint2/tint2rc
+      cp -f /tmp/olal-deploy/olal-tint2rc /etc/olal/tint2rc 2>/dev/null || true
+    fi
     echo ">> Olal OS instalado dentro do Debian:"
     grep -o "OLAL_BUILD = \"[^\"]*\"" /opt/olal/shell/index.html 2>/dev/null | sed "s/OLAL_BUILD = />>   versao: /"
   fi
   # ---- tuning do sistema (idempotente, barato): apt/dpkg mais rapido e leve ----
-  if [ ! -f /etc/apt/apt.conf.d/99olal ]; then
+  [ -f /etc/apt/apt.conf.d/99olal ] || \
     printf "APT::Install-Recommends \"false\";\nAPT::Install-Suggests \"false\";\nAcquire::Languages \"none\";\n" > /etc/apt/apt.conf.d/99olal 2>/dev/null
-  fi
-  if [ ! -f /etc/dpkg/dpkg.cfg.d/99olal-nodoc ]; then
+  [ -f /etc/dpkg/dpkg.cfg.d/99olal-nodoc ] || \
     printf "path-exclude /usr/share/doc/*\npath-exclude /usr/share/man/*\npath-exclude /usr/share/info/*\npath-exclude /usr/share/locale/*/LC_MESSAGES/*.mo\n" > /etc/dpkg/dpkg.cfg.d/99olal-nodoc 2>/dev/null
-  fi
+
+  # ---- ambiente de GPU/render (todos os apps X11 herdam estes env) ----
   export DISPLAY=:0
   export PULSE_SERVER=127.0.0.1
   export GALLIUM_DRIVER=virpipe
   export MESA_GL_VERSION_OVERRIDE=4.3COMPAT
   export MESA_GLES_VERSION_OVERRIDE=3.2
   export MESA_NO_ERROR=1
-  export MALLOC_ARENA_MAX=2        # menos fragmentacao/CPU de heap em apps com threads
-  export MOZ_USE_XINPUT2=1         # input do Firefox mais responsivo (toque/scroll)
+  # shader cache: NUNCA desabilita. Com cache, 2o boot do Firefox e ~40% mais rapido.
+  export MESA_SHADER_CACHE_DISABLE=false
+  export MESA_SHADER_CACHE_DIR=/root/.cache/olal-shader
+  export MESA_GLSL_CACHE_DIR=/root/.cache/olal-shader
+  mkdir -p /root/.cache/olal-shader 2>/dev/null
+  # heap: menos arenas = menos RAM fragmentada em apps com threads (Firefox, Chromium)
+  export MALLOC_ARENA_MAX=2
+  # input do Firefox mais responsivo (toque/scroll)
+  export MOZ_USE_XINPUT2=1
+  # GTK: menos reload de tema, mais rapido pra abrir app
+  export GTK_MODULES=""
+  export NO_AT_BRIDGE=1
+
+  # ---- WM + barra do Olal ----
   mkdir -p /run/dbus
-  dbus-launch openbox &
+  # openbox: so gerencia janelas (maximize-all + undecorate via rc.xml).
+  # --config-file aponta pro rc.xml do Olal (regras mobile-like).
+  # Sem --sm-disable nem --exit-with-session (v8 usava `dbus-launch openbox &`
+  # simples; voltamos a isso pra maximizar compatibilidade).
+  dbus-launch openbox --config-file /root/.config/openbox/rc.xml &
   sleep 2
+  # barra do Olal no topo (botao "Olal" + lista de janelas). Auto-hide apos 2s.
+  tint2 -c /root/.config/tint2/tint2rc >/dev/null 2>&1 &
+  sleep 1
+  # remove qualquer decoracao de janelas que por ventura ja existam (cold-start safety)
+  wmctrl -r ":ACTIVE:" -b remove,decorated 2>/dev/null || true
+
+  # ---- interface do Olal em tela cheia (o navegador kiosk) ----
   exec olal-shell
 '

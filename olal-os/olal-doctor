@@ -16,6 +16,12 @@ if [ -d "$SRC/.git" ]; then
   v=$(grep -o 'OLAL_BUILD = "[^"]*"' "$SRC/olal-os/shell/index.html" 2>/dev/null)
   [ -n "$v" ] && ok "versao no clone: $v" || bad "sem OLAL_BUILD no clone (clone velho? rode: git reset --hard origin/main)"
   grep -q 'App Store' "$SRC/olal-os/shell/index.html" 2>/dev/null && ok "App Store presente no clone" || bad "App Store AUSENTE no clone"
+  # valida se a versao NOVA (apps integrados) chegou no clone
+  grep -q 'wbadge\|winmgr\|launch_integrated' "$SRC/olal-os/shell/index.html" 2>/dev/null \
+    && ok "gerenciador de janelas (apps integrados) presente" \
+    || bad "gerenciador de janelas AUSENTE (clone velho - rode: cd ~/Olal && git reset --hard origin/main)"
+  [ -f "$SRC/olal-os/desktop/olal-rc.xml" ] && ok "config do openbox (maximize-all) presente" || bad "olal-rc.xml ausente"
+  [ -f "$SRC/olal-os/desktop/olal-tint2rc" ] && ok "config da barra do Olal (tint2) presente" || bad "olal-tint2rc ausente"
 else
   bad "nao achei o repo em $SRC (rode o install)"
 fi
@@ -43,6 +49,9 @@ for RD in \
     if [ -f "$RD/opt/olal/shell/index.html" ]; then
       iv=$(grep -o 'OLAL_BUILD = "[^"]*"' "$RD/opt/olal/shell/index.html" 2>/dev/null)
       [ -n "$iv" ] && ok "    versao INSTALADA no Debian: $iv" || bad "    Debian tem index.html mas SEM build stamp (versao velha)"
+      grep -q 'wbadge\|winmgr' "$RD/opt/olal/shell/index.html" 2>/dev/null \
+        && ok "    gerenciador de janelas INSTALADO no Debian" \
+        || bad "    gerenciador de janelas AUSENTE no Debian (rodar ./olal)"
       grep -q 'App Store' "$RD/opt/olal/shell/index.html" 2>/dev/null && ok "    App Store presente no Debian" || bad "    App Store AUSENTE no Debian (codigo velho)"
     else
       bad "    sem /opt/olal/shell/index.html no Debian (interface nao instalada)"
@@ -52,6 +61,14 @@ for RD in \
     else
       bad "    sem /usr/local/bin/olal-shell no Debian"
     fi
+    # ---- checagens novas: integracao de apps (WM + barra + wmctrl) ----
+    [ -f "$RD/root/.config/openbox/rc.xml" ] && ok "    openbox config (maximize-all) instalada" || bad "    openbox sem config (apps abrem em janelas, rode ./olal)"
+    [ -f "$RD/root/.config/tint2/tint2rc" ] && ok "    barra do Olal (tint2) configurada" || bad "    tint2 sem config (sem botao Olal)"
+    [ -f "$RD/usr/local/bin/olal-back" ] && ok "    botao Olal (olal-back) instalado" || bad "    sem olal-back (botao Olal nao funciona)"
+    # pacotes de integracao dentro do Debian
+    for bin in wmctrl xdotool tint2; do
+      [ -x "$RD/usr/bin/$bin" ] && ok "    $bin instalado no Debian" || bad "    $bin AUSENTE (rode setup-desktop.sh de novo)"
+    done
   fi
 done
 [ "$FOUND" = 0 ] && bad "NENHUM rootfs Debian encontrado nos caminhos conhecidos!"
@@ -59,6 +76,12 @@ done
 hr "4) Backend da interface (se o Olal estiver aberto)"
 if timeout 4 curl -fsS "http://localhost:8080/api/sysinfo" >/dev/null 2>&1; then
   ok "backend respondendo em localhost:8080"
+  # testa as rotas novas de integracao de janelas
+  if timeout 4 curl -fsS "http://localhost:8080/api/windows" 2>/dev/null | grep -q '"windows"'; then
+    ok "rota /api/windows respondendo (gerenciador de janelas OK)"
+  else
+    bad "rota /api/windows nao respondeu (backend velho - precisa reiniciar o Olal)"
+  fi
 else
   echo "  (backend nao esta no ar agora - normal se o Olal nao estiver aberto)"
 fi
@@ -67,7 +90,6 @@ hr "5) Aceleracao por GPU (Adreno/Turnip)"
 command -v virgl_test_server >/dev/null 2>&1 \
   && ok "virgl ACELERADO (zink/Turnip) disponivel no Termux" \
   || bad "so virgl software (rode: pkg install mesa-zink virglrenderer-mesa-zink vulkan-loader-android)"
-# checa o renderer GL DENTRO do Debian (precisa do proot)
 if command -v proot-distro >/dev/null 2>&1; then
   R=$(timeout 25 proot-distro login debian -- bash -lc \
       'MESA_LOADER_DRIVER_OVERRIDE=zink TU_DEBUG=noconform glxinfo 2>/dev/null | grep -i "OpenGL renderer" | head -1' 2>/dev/null)
@@ -80,3 +102,6 @@ hr "Resumo"
 echo "  Se (1) e (2) estao OK mas (3) mostra versao velha no Debian, rode:"
 echo "      cd ~/Olal && git reset --hard origin/main && cd olal-os && ./olal"
 echo "  O ./olal instala por 3 caminhos; veja as linhas '>> Olal OS instalado dentro do Debian'."
+echo ""
+echo "  Se (3) mostra 'openbox sem config' ou 'wmctrl AUSENTE', rode o setup-desktop de novo:"
+echo "      proot-distro login debian -- bash -c 'bash /root/olal-src/olal-os/setup-desktop.sh'"

@@ -1,8 +1,23 @@
 #!/bin/bash
 # ============================================================
 #  Olal OS - interface do sistema (a "cara" do OS) em tela cheia.
-#  Sobe o backend (terminal/arquivos/sistema reais) e abre a
+#  Soba o backend (terminal/arquivos/sistema reais) e abre a
 #  interface no 1o navegador que RENDERIZAR (firefox -> chromium).
+#
+#  ARQUITETURA:
+#  - O navegador do Olal abre em modo --kiosk (tela cheia REAL,
+#    sem URL bar, sem tabs, sem decoração). E a interface do OS.
+#  - Apps baixados (GIMP, LibreOffice, etc.) abrem como janelas
+#    MAXIMIZADAS SEM DECORACAO via regras do openbox (rc.xml).
+#  - A barra do Olal (tint2, 28px no topo) fica ACIMA do navegador
+#    kiosk NAO - kiosk cobre tudo. Em vez disso, o navegador do
+#    Olal deixa 28px no topo (via --window-size + --window-position
+#    no Chromium, ou via JS no Firefox). A barra do Olal fica visivel.
+#  - Apps baixados abrem "por cima" do navegador; o botao "Olal"
+#    da barra traz o navegador de volta pra frente.
+#
+#  Em caso de GPU quebrada (tela preta), cai automaticamente pro
+#  Firefox por software (caminho garantido).
 # ============================================================
 # auto-atualiza a interface do GitHub (best-effort; nao trava se offline/VPN)
 mkdir -p /opt/olal/shell
@@ -56,26 +71,30 @@ user_pref("browser.newtabpage.enabled", false);
 user_pref("toolkit.telemetry.enabled", false);
 user_pref("datareporting.healthreport.uploadEnabled", false);
 user_pref("network.prefetch-next", false);
+/* PERF novo: GPU/Vulkan */
+user_pref("gfx.webrender.all", true);                /* WebRender sempre (mais rapido em Adreno via zink) */
+user_pref("gfx.webrender.compositor", true);
+user_pref("dom.ipc.plugins.asyncInit", true);
+user_pref("dom.ipc.processPrelaunch.enabled", false);
 JS
 
 # ============================================================
 #  Escolha do navegador com ACELERACAO POR GPU (Adreno/Turnip) e
 #  rede de seguranca: se a tela ficar PRETA (GPU falhou), cai sozinho
-#  pro Firefox por software (o caminho garantido). Assim da pra usar a
-#  GPU real sem risco de travar numa tela preta.
+#  pro Firefox por software (o caminho garantido).
+#
+#  VOLTOU --kiosk: a interface do Olal E kiosk (tela cheia, sem UI
+#  do navegador). A barra do Olal (tint2) aparece ACIMA do kiosk
+#  porque o openbox tem <layer>above</layer> pra tint2 no rc.xml.
+#  Apps baixados abrem por cima do kiosk (maximizados, sem decoracao).
 # ============================================================
 export DISPLAY="${DISPLAY:-:0}"
 export MOZ_FAKE_NO_SANDBOX=1 MOZ_DISABLE_RDD_SANDBOX=1
-# o boot (olal) cria /tmp/olal-gpu quando o virgl acelerado por zink/Turnip
-# sobe. Sem esse flag, NAO arriscamos os navegadores por GPU: vamos direto
-# pro Firefox software (sem atrasos), exatamente como antes.
 GPU_ON=0; [ -f /tmp/olal-gpu ] && GPU_ON=1
 
 # detector de tela preta: captura a raiz do X e mede o brilho medio (0-255).
 # UI do Olal tem fundo/icones coloridos -> brilho alto; GPU quebrada -> ~0.
 HAVE_SHOT=0; command -v import >/dev/null && command -v convert >/dev/null && HAVE_SHOT=1
-# sem o detector NAO da pra arriscar a GPU (tela preta nao seria detectada);
-# instala em segundo plano pro proximo boot e, por enquanto, usa o Firefox.
 [ "$HAVE_SHOT" = 0 ] && ( apt-get install -y imagemagick >/dev/null 2>&1 \
   || sudo apt-get install -y imagemagick >/dev/null 2>&1 ) &
 screen_bright(){ import -window root -silent /tmp/olal-probe.png 2>/dev/null \
@@ -94,7 +113,6 @@ run_browser(){ local label="$1"; shift
       if [ -n "$b" ] && [ "$b" -gt 10 ] 2>/dev/null; then ok=1; break; fi
     fi
   done
-  # sem ferramenta de screenshot: confia no "vivo apos 8s" (comportamento antigo)
   [ "$HAVE_SHOT" = 1 ] || { kill -0 "$pid" 2>/dev/null && ok=1; }
   if [ "$ok" = 1 ]; then echo ">> Olal OS rodando ($label, render OK)."; wait "$pid"; return 0; fi
   echo "   ($label nao renderizou - tela preta? proximo...)"
@@ -106,11 +124,12 @@ ICD="/usr/share/vulkan/icd.d/freedreno_icd.${ARCH}.json"
 mkdir -p "$HOME/.cache/olal-shader"
 GPU_ENV=(MESA_LOADER_DRIVER_OVERRIDE=zink TU_DEBUG=noconform vblank_mode=0
   MESA_SHADER_CACHE_DISABLE=false "MESA_SHADER_CACHE_DIR=$HOME/.cache/olal-shader"
+  "MESA_GLSL_CACHE_DIR=$HOME/.cache/olal-shader"
   MESA_GL_VERSION_OVERRIDE=4.3COMPAT MESA_GLES_VERSION_OVERRIDE=3.2 MESA_NO_ERROR=1)
 [ -f "$ICD" ] && GPU_ENV+=("VK_ICD_FILENAMES=$ICD")
 
 # 1) CHROMIUM acelerado por GPU (Turnip/zink) - o caminho RAPIDO de verdade.
-#    So tenta se o detector de tela preta existe (senao seria arriscado).
+#    --kiosk: tela cheia, sem URL bar, sem tabs. Interface do Olal em tela cheia.
 if [ "$GPU_ON" = 1 ] && [ "$HAVE_SHOT" = 1 ] && command -v chromium >/dev/null; then
   run_browser "Chromium GPU (Turnip/zink)" env "${GPU_ENV[@]}" \
     chromium --no-sandbox --kiosk --ozone-platform=x11 --enable-features=UseOzonePlatform,VaapiVideoDecoder \
@@ -120,7 +139,6 @@ if [ "$GPU_ON" = 1 ] && [ "$HAVE_SHOT" = 1 ] && command -v chromium >/dev/null; 
     --disable-extensions --disable-component-update --user-data-dir="$HOME/.olal-chrome" "$URL" && exit 0
 fi
 # 2) FIREFOX com WebRender por GPU (usa o virgl acelerado por zink/Turnip).
-#    So se houver detector (cai sozinho pro software se a GPU der tela preta).
 FF=""; command -v firefox-esr >/dev/null && FF=firefox-esr || { command -v firefox >/dev/null && FF=firefox; }
 if [ -n "$FF" ] && [ "$GPU_ON" = 1 ] && [ "$HAVE_SHOT" = 1 ]; then
   run_browser "Firefox GPU (WebRender/virgl)" \
