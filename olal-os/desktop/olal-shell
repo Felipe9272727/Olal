@@ -58,24 +58,72 @@ user_pref("datareporting.healthreport.uploadEnabled", false);
 user_pref("network.prefetch-next", false);
 JS
 
-# tenta um navegador; se ele cair em <6s (crash/tela preta), volta e tenta o proximo
-try(){ "$@" >/dev/null 2>&1 & local pid=$!; sleep 6
-  if kill -0 "$pid" 2>/dev/null; then echo ">> Olal OS rodando."; wait "$pid"; return 0; fi
-  return 1; }
-
+# ============================================================
+#  Escolha do navegador com ACELERACAO POR GPU (Adreno/Turnip) e
+#  rede de seguranca: se a tela ficar PRETA (GPU falhou), cai sozinho
+#  pro Firefox por software (o caminho garantido). Assim da pra usar a
+#  GPU real sem risco de travar numa tela preta.
+# ============================================================
+export DISPLAY="${DISPLAY:-:0}"
 export MOZ_FAKE_NO_SANDBOX=1 MOZ_DISABLE_RDD_SANDBOX=1
 
-# 1) Firefox (caminho GTK/software - o mais confiavel no Termux:X11)
-command -v firefox-esr >/dev/null && try firefox-esr --kiosk --profile "$PROF" --no-remote "$URL" && exit 0
-command -v firefox     >/dev/null && try firefox     --kiosk --profile "$PROF" --no-remote "$URL" && exit 0
-# 2) Chromium acelerado por zink/Turnip (GPU real da Adreno)
-command -v chromium >/dev/null && try env MESA_LOADER_DRIVER_OVERRIDE=zink TU_DEBUG=noconform \
-  chromium --no-sandbox --kiosk --ozone-platform=x11 --enable-features=UseOzonePlatform \
-  --use-gl=egl --autoplay-policy=no-user-gesture-required \
-  --user-data-dir="$HOME/.olal-chrome" "$URL" && exit 0
-# 3) Chromium em processo unico (ultimo recurso)
-command -v chromium >/dev/null && try chromium --no-sandbox --kiosk --single-process \
-  --ozone-platform=x11 --use-gl=swiftshader --enable-unsafe-swiftshader \
+# detector de tela preta: captura a raiz do X e mede o brilho medio (0-255).
+# UI do Olal tem fundo/icones coloridos -> brilho alto; GPU quebrada -> ~0.
+HAVE_SHOT=0; command -v import >/dev/null && command -v convert >/dev/null && HAVE_SHOT=1
+# sem o detector NAO da pra arriscar a GPU (tela preta nao seria detectada);
+# instala em segundo plano pro proximo boot e, por enquanto, usa o Firefox.
+[ "$HAVE_SHOT" = 0 ] && ( apt-get install -y imagemagick >/dev/null 2>&1 \
+  || sudo apt-get install -y imagemagick >/dev/null 2>&1 ) &
+screen_bright(){ import -window root -silent /tmp/olal-probe.png 2>/dev/null \
+  && convert /tmp/olal-probe.png -colorspace Gray -resize 1x1 -format '%[fx:int(mean*255)]' info: 2>/dev/null; }
+
+# roda um navegador e confirma que RENDEROU (processo vivo + tela nao-preta).
+# $1 = rotulo; resto = comando. Retorna 0 e segura o processo se renderizou.
+run_browser(){ local label="$1"; shift
+  echo ">> tentando: $label"
+  "$@" >/dev/null 2>&1 & local pid=$!
+  local t=0 ok=0
+  while [ $t -lt 12 ]; do sleep 1; t=$((t+1))
+    kill -0 "$pid" 2>/dev/null || { echo "   ($label caiu)"; return 1; }
+    if [ $t -ge 6 ] && [ "$HAVE_SHOT" = 1 ]; then
+      local b; b=$(screen_bright)
+      if [ -n "$b" ] && [ "$b" -gt 10 ] 2>/dev/null; then ok=1; break; fi
+    fi
+  done
+  # sem ferramenta de screenshot: confia no "vivo apos 8s" (comportamento antigo)
+  [ "$HAVE_SHOT" = 1 ] || { kill -0 "$pid" 2>/dev/null && ok=1; }
+  if [ "$ok" = 1 ]; then echo ">> Olal OS rodando ($label, render OK)."; wait "$pid"; return 0; fi
+  echo "   ($label nao renderizou - tela preta? proximo...)"
+  kill "$pid" 2>/dev/null; pkill -P "$pid" 2>/dev/null; sleep 1; return 1; }
+
+# ---- env de GPU: Turnip (Vulkan da Adreno) via zink, acesso direto ao KGSL ----
+ARCH="$(uname -m)"
+ICD="/usr/share/vulkan/icd.d/freedreno_icd.${ARCH}.json"
+mkdir -p "$HOME/.cache/olal-shader"
+GPU_ENV=(MESA_LOADER_DRIVER_OVERRIDE=zink TU_DEBUG=noconform vblank_mode=0
+  MESA_SHADER_CACHE_DISABLE=false "MESA_SHADER_CACHE_DIR=$HOME/.cache/olal-shader"
+  MESA_GL_VERSION_OVERRIDE=4.3COMPAT MESA_GLES_VERSION_OVERRIDE=3.2 MESA_NO_ERROR=1)
+[ -f "$ICD" ] && GPU_ENV+=("VK_ICD_FILENAMES=$ICD")
+
+# 1) CHROMIUM acelerado por GPU (Turnip/zink) - o caminho RAPIDO de verdade.
+#    So tenta se o detector de tela preta existe (senao seria arriscado).
+if [ "$HAVE_SHOT" = 1 ] && command -v chromium >/dev/null; then
+  run_browser "Chromium GPU (Turnip/zink)" env "${GPU_ENV[@]}" \
+    chromium --no-sandbox --kiosk --ozone-platform=x11 --enable-features=UseOzonePlatform,VaapiVideoDecoder \
+    --use-gl=egl --ignore-gpu-blocklist --enable-gpu-rasterization --enable-zero-copy \
+    --canvas-oop-rasterization --autoplay-policy=no-user-gesture-required \
+    --disable-background-timer-throttling --no-first-run --disable-sync --disable-translate \
+    --disable-extensions --disable-component-update --user-data-dir="$HOME/.olal-chrome" "$URL" && exit 0
+fi
+# 2) FIREFOX por software - o caminho GARANTIDO (sempre renderiza no Termux:X11)
+command -v firefox-esr >/dev/null && run_browser "Firefox (software)" \
+  firefox-esr --kiosk --profile "$PROF" --no-remote "$URL" && exit 0
+command -v firefox     >/dev/null && run_browser "Firefox (software)" \
+  firefox     --kiosk --profile "$PROF" --no-remote "$URL" && exit 0
+# 3) CHROMIUM swiftshader em processo unico (ultimo recurso)
+command -v chromium >/dev/null && run_browser "Chromium swiftshader" \
+  chromium --no-sandbox --kiosk --single-process --ozone-platform=x11 \
+  --use-gl=swiftshader --enable-unsafe-swiftshader \
   --user-data-dir="$HOME/.olal-chrome2" "$URL" && exit 0
 
 echo "Nenhum navegador renderizou. Rode 'olal-doctor' para diagnosticar."

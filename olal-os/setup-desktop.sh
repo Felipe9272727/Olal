@@ -16,7 +16,7 @@ apt-get install -y --no-install-recommends \
     firefox-esr chromium \
     dbus-x11 x11-xserver-utils \
     mesa-utils mesa-vulkan-drivers libvulkan1 vulkan-tools libgl1-mesa-dri \
-    pulseaudio-utils \
+    pulseaudio-utils imagemagick \
     python3 git build-essential nano wget curl \
     fonts-dejavu fonts-noto-core fonts-noto-color-emoji || true
 # o Firefox renderiza pelo mesmo caminho GTK/X11 do desktop (mais confiavel
