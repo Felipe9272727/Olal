@@ -26,7 +26,7 @@
 
   /* ---- home ---- */
   #home{ flex:1; overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;
-    padding:8px 16px calc(28px + env(safe-area-inset-bottom,0px)); }
+    padding:8px 16px calc(28px + env(safe-area-inset-bottom,0px)); contain:layout paint; }
   #greet{ text-align:center; font-size:clamp(26px,8vw,34px); font-weight:800; margin:18px 0 16px;
     color:#f5f8fc; letter-spacing:.5px; }
   #aihome{ display:flex; align-items:center; gap:12px; margin:0 0 22px; padding:15px 18px;
@@ -50,7 +50,8 @@
   /* ---- tela de app (slide up) ---- */
   #view{ position:absolute; inset:0; display:flex; flex-direction:column; background:#080d18;
     transform:translateY(100%); opacity:0; visibility:hidden;
-    transition:transform .3s var(--ease), opacity .25s var(--ease), visibility .3s; z-index:40; }
+    transition:transform .26s var(--ease), opacity .22s var(--ease), visibility .26s; z-index:40;
+    will-change:transform; contain:layout paint; }
   #view.on{ transform:translateY(0); opacity:1; visibility:visible; }
   #bar{ height:54px; flex:0 0 auto; display:flex; align-items:center; gap:12px; padding:0 12px;
     padding-top:env(safe-area-inset-top,0px); background:#0b1322; border-bottom:1px solid #1b2740; }
@@ -58,7 +59,8 @@
     color:var(--accent); font-size:20px; font-weight:700; transition:transform .15s var(--ease); }
   #bar button.back:active{ transform:scale(.85); }
   #bar .title{ font-size:19px; font-weight:700; color:#f1f5f9; }
-  #body{ flex:1; overflow:auto; position:relative; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
+  #body{ flex:1; overflow:auto; position:relative; -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
+    contain:layout paint; }
   #body>*{ animation:fade .35s var(--ease); }
 
   /* ---- widgets ---- */
@@ -83,12 +85,13 @@
     width:60px; height:60px; border-radius:50%;
     background:linear-gradient(135deg,var(--accent),var(--accent2)); display:flex; align-items:center;
     justify-content:center; font-size:27px; box-shadow:0 8px 24px #0009, 0 0 20px #2bd17a55; z-index:50;
-    transition:transform .2s var(--ease); animation:floaty 3.5s ease-in-out infinite; }
+    transition:transform .2s var(--ease); }
   #aibtn:active{ transform:scale(.85); }
   #aiover{ position:absolute; inset:0; z-index:60; display:flex; flex-direction:column;
     background:linear-gradient(180deg,#0a1220,#05080f);
-    transform:translateY(100%); transition:transform .32s var(--ease); }
-  #aiover.on{ transform:translateY(0); }
+    transform:translateY(100%); visibility:hidden; will-change:transform; contain:layout paint;
+    transition:transform .28s var(--ease), visibility .28s; }
+  #aiover.on{ transform:translateY(0); visibility:visible; }
   #aihead{ display:flex; align-items:center; gap:12px; padding:14px 18px;
     padding-top:calc(14px + env(safe-area-inset-top,0px)); border-bottom:1px solid #16223a; }
   #aihead .dot{ width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));
@@ -97,7 +100,7 @@
   #aihead .x{ font-size:22px; color:#94a3b8; padding:6px 10px; border-radius:50%; }
   #aihead .x:active{ background:#1b2740; }
   #aichat{ flex:1; overflow:auto; padding:16px; display:flex; flex-direction:column; gap:11px;
-    -webkit-overflow-scrolling:touch; }
+    -webkit-overflow-scrolling:touch; contain:layout paint; }
   .msg{ max-width:85%; padding:11px 14px; border-radius:18px; line-height:1.45; white-space:pre-wrap;
     font-size:15px; animation:msgin .3s var(--ease); box-shadow:0 2px 8px #0004; word-break:break-word; }
   .msg.u{ align-self:flex-end; background:linear-gradient(135deg,#2f6bf0,#2563EB); color:#fff; border-bottom-right-radius:5px; }
@@ -338,7 +341,7 @@ function aiHandle(resp){
 /* ===== ponte com o SISTEMA REAL (backend Olal) - faz o Olal ser um OS ===== */
 /* carimbo de versao: aparece embaixo da home. Se NAO mudar depois de atualizar,
    o update nao chegou na interface (VPN bloqueou o git ou cache do navegador). */
-const OLAL_BUILD = "2026-06-18 • App Store + deploy via tmp v4";
+const OLAL_BUILD = "2026-06-18 • otimizado v5";
 window.addEventListener("load",()=>{ const e=document.getElementById("build"); if(e) e.textContent="Olal OS  ·  "+OLAL_BUILD; });
 
 const SYS_API = location.origin;
@@ -367,7 +370,12 @@ function probeSys(){
 }
 probeSys();
 /* tela de boot: some quando a interface esta pronta */
-window.addEventListener("load",()=>setTimeout(()=>document.getElementById("boot").classList.add("gone"),1600));
+window.addEventListener("load",()=>setTimeout(()=>{ const b=document.getElementById("boot");
+  if(!b) return; b.classList.add("gone");
+  /* PERF: depois do fade, tira o boot do fluxo (display:none) pra MATAR as
+     animacoes infinitas (pulse/load) que senao repintariam a tela pra sempre. */
+  setTimeout(()=>{ b.style.display="none"; },700);
+},1600));
 
 /* dica de primeiro uso: ensina o gesto de pinca pra ajustar o tamanho.
    aparece uma vez (depois do boot) e some sozinha em ~7s. */
@@ -408,31 +416,37 @@ const APPS = [
 const screenEl=document.getElementById("screen");
 const DW=400;                                     // largura de design (celular)
 let userScale=parseFloat(localStorage.getItem("olal_scale")||"1")||1;
+let _lastW=0,_lastH=0,_lastS=0,_applyQ=false;
+/* PERF: so reescreve o transform/size quando ALGO mudou de verdade. Setar o
+   transform da #screen (que e enorme e escalada) forca repintura cara; evitar
+   no-ops mata a maior parte do custo dos timers/handlers. */
 function olalApply(){
   const vv=window.visualViewport;
   const w=window.innerWidth||document.documentElement.clientWidth||screen.width;
-  // usa a altura do visualViewport: quando o teclado virtual sobe, ela encolhe,
-  // entao a interface se ajusta e o campo de digitar fica visivel acima do teclado.
   const h=(vv&&vv.height)||window.innerHeight||document.documentElement.clientHeight||screen.height;
   const s=Math.max(0.3, (w/DW)*userScale);
+  if(w===_lastW && h===_lastH && s===_lastS) return;   // nada mudou -> sem repintura
+  _lastW=w; _lastH=h; _lastS=s;
   screenEl.style.width=DW+"px";
   screenEl.style.height=(h/s)+"px";
   screenEl.style.transform="scale("+s+")";
 }
+/* coalesce varios eventos (resize/scroll do teclado) num unico apply por frame */
+function olalApplyRAF(){ if(_applyQ) return; _applyQ=true;
+  requestAnimationFrame(()=>{ _applyQ=false; olalApply(); }); }
 function setScale(mult){ userScale=Math.min(2.2,Math.max(0.5, userScale*mult));
   localStorage.setItem("olal_scale",userScale.toFixed(3)); olalApply(); }
 function resetScale(){ userScale=1; localStorage.setItem("olal_scale","1"); olalApply(); }
 olalApply();
-window.addEventListener("resize",olalApply);
-window.addEventListener("orientationchange",olalApply);
+window.addEventListener("resize",olalApplyRAF);
+window.addEventListener("orientationchange",olalApplyRAF);
 window.addEventListener("load",olalApply);
 /* reage ao teclado virtual subindo/descendo (mantem o input visivel) */
-if(window.visualViewport){ window.visualViewport.addEventListener("resize",olalApply);
-  window.visualViewport.addEventListener("scroll",olalApply); }
-/* re-aplica nos primeiros segundos + a cada 1s no inicio (o Firefox no
-   Termux:X11 pode reportar a largura atrasado) */
-[80,200,500,1000,2000,3500].forEach(t=>setTimeout(olalApply,t));
-let _fitN=0, _fitIv=setInterval(()=>{ olalApply(); if(++_fitN>8) clearInterval(_fitIv); },800);
+if(window.visualViewport){ window.visualViewport.addEventListener("resize",olalApplyRAF);
+  window.visualViewport.addEventListener("scroll",olalApplyRAF); }
+/* re-aplica nos primeiros segundos (o Firefox no Termux:X11 pode reportar a
+   largura atrasado). O guard acima faz cada chamada virar no-op se nada mudou. */
+[120,400,900,1800,3200].forEach(t=>setTimeout(olalApply,t));
 
 /* a interface E fixa: NADA deve rolar a janela (o teclado virtual ou o foco
    num input nao pode empurrar a tela inteira pra fora). Forca volta ao topo. */
@@ -496,14 +510,15 @@ function closeApp(){ view.classList.remove("on"); curApp=-1;
 /* re-renderiza o app aberto (ex.: quando o backend e detectado depois de abrir) */
 function reopenApp(){ if(curApp>=0 && view.classList.contains("on")){ body.innerHTML=""; APPS[curApp].f(body); } }
 
-/* relogio + saudacao */
+/* relogio + saudacao (PERF: so escreve no DOM quando o texto MUDA) */
+let _lastClk="",_lastGreet="";
 function tick(){
   const d=new Date(); const hh=String(d.getHours()).padStart(2,"0"), mm=String(d.getMinutes()).padStart(2,"0");
-  document.getElementById("clock").textContent=hh+":"+mm;
-  const h=d.getHours(); document.getElementById("greet").textContent =
-    h<12?"Bom dia":h<18?"Boa tarde":"Boa noite";
+  const clk=hh+":"+mm; if(clk!==_lastClk){ _lastClk=clk; const e=document.getElementById("clock"); if(e)e.textContent=clk; }
+  const h=d.getHours(); const g=h<12?"Bom dia":h<18?"Boa tarde":"Boa noite";
+  if(g!==_lastGreet){ _lastGreet=g; const e=document.getElementById("greet"); if(e)e.textContent=g; }
 }
-setInterval(tick,1000); tick();
+tick(); setInterval(tick,15000);   // checar a cada 15s basta (so muda de minuto)
 
 /* ===== assistente de IA global (o cerebro do sistema) ===== */
 let aiHist=[];

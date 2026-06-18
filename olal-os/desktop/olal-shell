@@ -45,6 +45,17 @@ user_pref("media.autoplay.blocking_policy", 0);
 user_pref("browser.cache.disk.enable", false);
 user_pref("browser.cache.memory.enable", false);
 user_pref("browser.cache.offline.enable", false);
+/* PERF (kiosk): menos CPU/RAM sem mudar a aparencia */
+user_pref("accessibility.force_disabled", 1);        /* desliga o motor de a11y (ganho real de CPU) */
+user_pref("dom.ipc.processCount", 1);                /* 1 processo de conteudo (so 1 pagina) */
+user_pref("browser.sessionstore.interval", 600000);  /* quase nao salva sessao (menos I/O) */
+user_pref("browser.sessionstore.resume_from_crash", false);
+user_pref("extensions.pocket.enabled", false);
+user_pref("reader.parse-on-load.enabled", false);
+user_pref("browser.newtabpage.enabled", false);
+user_pref("toolkit.telemetry.enabled", false);
+user_pref("datareporting.healthreport.uploadEnabled", false);
+user_pref("network.prefetch-next", false);
 JS
 
 # tenta um navegador; se ele cair em <6s (crash/tela preta), volta e tenta o proximo
