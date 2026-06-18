@@ -9,9 +9,10 @@ export DEBIAN_FRONTEND=noninteractive
 echo ">> atualizando o Debian..."
 apt-get update -y; apt-get upgrade -y || true
 
-echo ">> instalando o desktop XFCE + navegadores + GPU (Turnip/zink)..."
+echo ">> instalando o Olal OS: WM minimo (openbox) + navegador + GPU..."
+# Olal E a interface (nao usamos um desktop XFCE). Openbox so gerencia janelas.
 apt-get install -y --no-install-recommends \
-    xfce4 xfce4-terminal xfce4-goodies xfdesktop4 \
+    openbox \
     firefox-esr chromium \
     dbus-x11 x11-xserver-utils \
     mesa-utils mesa-vulkan-drivers libvulkan1 vulkan-tools libgl1-mesa-dri \
@@ -97,5 +98,35 @@ Exec=bash -c 'sleep 3; for p in $(xfconf-query -c xfce4-desktop -l 2>/dev/null |
 X-GNOME-Autostart-enabled=true
 EOF
 
-echo "Olal OS (Debian XFCE)" > /etc/olal-release
-echo ">> setup do desktop concluido."
+# ---------- IDENTIDADE DE OS: o sistema se chama Olal OS, nao Debian ----------
+echo "Olal OS 1.0" > /etc/olal-release
+# os-release (o que neofetch/fastfetch e o sistema leem)
+cat > /etc/os-release <<'EOF'
+PRETTY_NAME="Olal OS 1.0 (movido por IA)"
+NAME="Olal OS"
+VERSION_ID="1.0"
+VERSION="1.0"
+ID=olal
+ID_LIKE=debian
+HOME_URL="https://felipe9272727.github.io/Olal/"
+EOF
+echo "olal" > /etc/hostname
+echo "Bem-vindo ao Olal OS - Linux real, movido por IA." > /etc/motd
+cat > /etc/issue <<'EOF'
+Olal OS 1.0 \n \l
+EOF
+
+# banner do Olal ao abrir o terminal (logo ASCII + prompt proprio)
+cat > /etc/profile.d/olal.sh <<'SH'
+if [ -t 1 ]; then
+cat <<'BANNER'
+   ___  _       _    ___  ___
+  / _ \| | __ _| |  / _ \/ __|   Olal OS 1.0
+ | (_) | |/ _` | | | (_) \__ \   Linux real, movido por IA
+  \___/|_|\__,_|_|  \___/|___/   apps: ola32 | olal-shell | gpu-test
+BANNER
+fi
+export PS1='\[\e[38;5;42m\]olal\[\e[0m\]:\[\e[38;5;39m\]\w\[\e[0m\]\$ '
+SH
+
+echo ">> setup do desktop (Olal OS) concluido."

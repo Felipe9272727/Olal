@@ -136,6 +136,15 @@ function aiHandle(resp){
   return text || "feito!";
 }
 
+/* ===== ponte com o SISTEMA REAL (backend Olal) - faz o Olal ser um OS ===== */
+const SYS_API = location.origin;
+let SYS_OK = false;
+async function sysExec(cmd,cwd){ const r=await fetch(SYS_API+"/api/exec",{method:"POST",
+  headers:{"Content-Type":"application/json"},body:JSON.stringify({cmd,cwd})}); return r.json(); }
+async function sysLs(path){ const r=await fetch(SYS_API+"/api/ls?path="+encodeURIComponent(path||"")); return r.json(); }
+async function sysInfo(){ const r=await fetch(SYS_API+"/api/sysinfo"); return r.json(); }
+fetch(SYS_API+"/api/sysinfo").then(r=>r.ok&&(SYS_OK=true)).catch(()=>{});
+
 /* ===== mesma lista/cores dos apps do nosso OS ===== */
 const APPS = [
   {n:"Olal AI", c:"#2BD17A", i:"AI", f:appAI},
@@ -214,6 +223,14 @@ function localIntent(text){
 async function aiSend(){
   const inp=document.getElementById("aimsg"); const t=inp.value.trim(); if(!t) return; inp.value="";
   aiBubble("user",t); aiHist.push({role:"user",content:t});
+  // a IA executa comandos REAIS do sistema (Olal OS): "rode X", "$ X", "instala X"
+  let cm = t.match(/^\s*(?:rode|roda|executa|execute|rodar|comando)\s+(.+)/i);
+  if(!cm && t.startsWith("$")) cm=[0,t.slice(1).trim()];
+  if(!cm){ const ins=t.match(/^\s*instal[ae]r?\s+(.+)/i); if(ins) cm=[0,"apt-get install -y "+ins[1]]; }
+  if(SYS_OK && cm){ const bb=aiBubble("a","executando…");
+    try{ const r=await sysExec(cm[1]); bb.textContent="$ "+cm[1]+"\n"+((r.out||"(sem saída)").slice(0,2500)); }
+    catch(e){ bb.textContent="erro: "+e.message; }
+    aiHist.push({role:"assistant",content:"(comando executado)"}); aiChat.scrollTop=aiChat.scrollHeight; return; }
   const local=localIntent(t);
   if(local){ aiBubble("a",local); aiHist.push({role:"assistant",content:local}); return; }
   const b=aiBubble("a","…");
@@ -351,21 +368,27 @@ function appClock(b){
   u(); const iv=setInterval(()=>{ if(!u()) clearInterval(iv); },1000);
 }
 
-/* ----- Terminal ----- */
+/* ----- Terminal REAL (bash do Debian por baixo, via backend) ----- */
 function appTerm(b){
   b.innerHTML=`<div class="pad" style="height:100%;display:flex;flex-direction:column">
-    <pre id="tout" style="flex:1;overflow:auto;color:#4ade80;margin:0;white-space:pre-wrap;font-size:14px">Olal OS terminal\nDigite 'help'.\n</pre>
-    <input class="field" id="tin" placeholder="comando..."></div>`;
+    <pre id="tout" style="flex:1;overflow:auto;color:#4ade80;margin:0;white-space:pre-wrap;font-size:14px">Olal OS - terminal\n</pre>
+    <input class="field" id="tin" placeholder="comando (bash real)..." autocapitalize="off" autocomplete="off"></div>`;
   const out=b.querySelector("#tout"), inp=b.querySelector("#tin");
-  inp.onkeydown=e=>{ if(e.key!=="Enter") return; const c=inp.value.trim(); inp.value="";
-    out.textContent+="olal$ "+c+"\n";
-    if(c==="help") out.textContent+="cmds: help clear date ver echo ls\n";
-    else if(c==="clear") out.textContent="";
-    else if(c==="ver") out.textContent+="Olal OS (Linux) v1.0\n";
-    else if(c==="date") out.textContent+=new Date().toString()+"\n";
-    else if(c==="ls") out.textContent+="notas.txt  sistema/  olal.ai\n";
-    else if(c.startsWith("echo ")) out.textContent+=c.slice(5)+"\n";
-    else if(c) out.textContent+="cmd nao encontrado: "+c+"\n";
+  let cwd=null;
+  out.textContent += SYS_OK ? "bash do sistema. ex: ls, pwd, uname -a, apt list\n\n" : "(modo local - sem backend)\n\n";
+  inp.onkeydown=async e=>{ if(e.key!=="Enter") return; const c=inp.value.trim(); inp.value=""; if(!c) return;
+    out.textContent+="olal$ "+c+"\n"; out.scrollTop=out.scrollHeight;
+    if(c==="clear"){ out.textContent=""; return; }
+    if(SYS_OK){
+      try{ const r=await sysExec(c,cwd); out.textContent+=r.out;
+           if(c.startsWith("cd ")){ const p=await sysExec("cd "+c.slice(3)+" && pwd",cwd); cwd=(p.out||"").trim()||cwd; }
+      }catch(err){ out.textContent+="sem backend: "+err.message+"\n"; }
+    } else {
+      if(c==="help") out.textContent+="terminal real precisa do Olal OS instalado (backend).\n";
+      else if(c==="date") out.textContent+=new Date().toString()+"\n";
+      else if(c.startsWith("echo ")) out.textContent+=c.slice(5)+"\n";
+      else out.textContent+="(no Olal OS instalado isto roda bash de verdade)\n";
+    }
     out.scrollTop=out.scrollHeight; };
 }
 
@@ -456,13 +479,24 @@ function appConfig(b){
     <button class="btn r" style="width:100%" onclick="location.reload()">Reiniciar interface</button></div>`;
 }
 function appSys(b){
-  b.innerHTML=`<div class="pad">
-    <div style="background:#0e1a18;border-radius:12px;padding:16px;line-height:2">
-      <div>Plataforma: <b>${navigator.platform||"Linux"}</b></div>
-      <div>Nucleos (CPU): <b>${navigator.hardwareConcurrency||"?"}</b></div>
-      <div>Memoria (aprox): <b>${navigator.deviceMemory?navigator.deviceMemory+" GB":"?"}</b></div>
-      <div>Tela: <b>${screen.width}x${screen.height}</b></div>
-      <div>Online: <b>${navigator.onLine?"sim":"nao"}</b></div></div></div>`;
+  b.innerHTML=`<div class="pad"><div id="sysbox" style="background:#0e1a18;border-radius:12px;padding:16px;line-height:1.9">carregando...</div></div>`;
+  const box=b.querySelector("#sysbox");
+  if(SYS_OK){ sysInfo().then(s=>{ box.innerHTML=
+    `<div style="font-size:20px;font-weight:700;color:#2BD17A;margin-bottom:8px">${s.os}</div>
+     <div>Base: <b>${s.distro}</b></div>
+     <div>Kernel: <b>${s.kernel} (${s.arch})</b></div>
+     <div>Host: <b>${s.host}</b> &nbsp; Usuario: <b>${s.user}</b></div>
+     <div>CPU: <b>${s.cpu}</b></div>
+     <div>Memoria: <b>${s.mem}</b></div>
+     <div>Disco: <b>${s.disk}</b></div>
+     <div>GPU: <b>${s.gpu||"?"}</b></div>
+     <div>Uptime: <b>${s.uptime}</b></div>`; }).catch(()=>box.textContent="sem backend"); }
+  else { box.innerHTML=
+    `<div style="font-size:20px;font-weight:700;color:#2BD17A;margin-bottom:8px">Olal OS</div>
+     <div>Plataforma: <b>${navigator.platform||"Linux"}</b></div>
+     <div>Nucleos: <b>${navigator.hardwareConcurrency||"?"}</b></div>
+     <div>Tela: <b>${screen.width}x${screen.height}</b></div>
+     <div style="color:#94a3b8;margin-top:8px">(instale o Olal OS p/ ver o sistema real)</div>`; }
 }
 function appNet(b){
   b.innerHTML=`<div class="pad"><div style="background:#0e1a2a;border-radius:12px;padding:16px;line-height:2">
@@ -470,12 +504,28 @@ function appNet(b){
     <div>Tipo: <b>${(navigator.connection&&navigator.connection.effectiveType)||"?"}</b></div>
     <div>User agent:</div><div style="font-size:12px;color:#94a3b8">${navigator.userAgent}</div></div></div>`;
 }
+/* ----- Arquivos REAIS (filesystem do Olal OS, via backend) ----- */
 function appFiles(b){
-  const f=[["notas.txt","1 KB"],["sistema/","-"],["olal.ai","98 KB"],["wallpaper.raw","1.5 MB"],["readme.md","2 KB"]];
-  b.innerHTML=`<div class="pad">`+f.map(x=>
-    `<div style="display:flex;align-items:center;gap:12px;background:#1E293B;border-radius:12px;padding:14px;margin-bottom:10px">
-      <div style="width:40px;height:40px;border-radius:8px;background:#2563EB;display:flex;align-items:center;justify-content:center;font-weight:700">F</div>
-      <div><div>${x[0]}</div><div style="color:#94a3b8;font-size:12px">${x[1]}</div></div></div>`).join("")+`</div>`;
+  b.innerHTML=`<div class="pad" style="height:100%;display:flex;flex-direction:column">
+    <div id="fpath" style="font-size:13px;color:#94a3b8;padding:4px 0 10px;word-break:break-all"></div>
+    <div id="flist" style="flex:1;overflow:auto"></div></div>`;
+  const fpath=b.querySelector("#fpath"), flist=b.querySelector("#flist");
+  const fmtsz=n=>n>1048576?(n/1048576).toFixed(1)+" MB":n>1024?(n/1024).toFixed(0)+" KB":n+" B";
+  function open(path){
+    if(!SYS_OK){ flist.innerHTML='<div style="color:#94a3b8;padding:16px">Arquivos reais aparecem no Olal OS instalado.</div>'; fpath.textContent="(preview)"; return; }
+    sysLs(path).then(d=>{ fpath.textContent="📁 "+d.path;
+      let h="";
+      if(d.parent && d.parent!==d.path) h+=row("..","dir",0,d.parent);
+      for(const it of d.items) h+=row(it.name, it.dir?"dir":"file", it.size, (d.path.endsWith("/")?d.path:d.path+"/")+it.name);
+      flist.innerHTML=h;
+      flist.querySelectorAll("[data-p]").forEach(el=>el.onclick=()=>{ if(el.dataset.d==="1") open(el.dataset.p); });
+    }).catch(()=>flist.innerHTML='<div style="color:#ef4444;padding:16px">erro ao ler</div>');
+  }
+  const row=(name,kind,size,full)=>
+    `<div data-p="${full.replace(/"/g,'&quot;')}" data-d="${kind==='dir'?1:0}" style="display:flex;align-items:center;gap:12px;background:#1E293B;border-radius:10px;padding:11px;margin-bottom:7px;cursor:pointer">
+      <div style="width:34px;height:34px;border-radius:8px;background:${kind==='dir'?'#EAB308':'#2563EB'};display:flex;align-items:center;justify-content:center;font-weight:700">${kind==='dir'?'📁':'📄'}</div>
+      <div style="flex:1"><div>${name}</div><div style="color:#94a3b8;font-size:12px">${kind==='dir'?'pasta':fmtsz(size)}</div></div></div>`;
+  open("");
 }
 </script>
 </body>
