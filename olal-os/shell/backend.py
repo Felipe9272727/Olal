@@ -2,13 +2,20 @@
 """Olal OS - backend do sistema.
 Serve a interface E expõe o sistema real para ela (terminal, arquivos,
 informações, controle). É o que faz o Olal ser um OS, não um launcher:
-os apps falam com o Debian de verdade por baixo."""
+os apps falam com o Debian de verdade por baixo.
+
+INTEGRAÇÃO DE APPS (novo): apps baixados abrem como "telas" dentro do
+Olal — maximizados, sem decoração — e a barra do topo (tint2) tem um
+botão "Olal" pra voltar à interface. As rotas /api/windows, /api/focus
+e /api/launch_integrated fazem essa ponte WM ↔ interface.
+"""
 import http.server, socketserver, subprocess, json, os, pwd, shutil, urllib.parse, sys
-import urllib.request
+import urllib.request, time, re, threading
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PORT = int(os.environ.get("OLAL_PORT", "8080"))
 HOME = os.path.expanduser("~")
+DISPLAY = os.environ.get("DISPLAY", ":0")
 
 def run(cmd, cwd=None, timeout=30):
     try:
@@ -40,24 +47,118 @@ def sysinfo():
 
 def listapps():
     """lista os programas GUI instalados no Olal OS (.desktop)."""
-    import glob, re
+    import glob
     out, seen = [], set()
-    for f in sorted(glob.glob("/usr/share/applications/*.desktop") + glob.glob(os.path.expanduser("~/.local/share/applications/*.desktop"))):
+    paths = sorted(glob.glob("/usr/share/applications/*.desktop") + glob.glob(os.path.expanduser("~/.local/share/applications/*.desktop")))
+    for f in paths:
         try:
             txt = open(f, errors="ignore").read()
             if "NoDisplay=true" in txt: continue
             nm = re.search(r"(?m)^Name=(.+)$", txt); ex = re.search(r"(?m)^Exec=(.+)$", txt)
+            ic = re.search(r"(?m)^Icon=(.+)$", txt)
             if not nm or not ex: continue
             name = nm.group(1).strip(); exe = re.sub(r"%[fFuUdDnN]", "", ex.group(1)).strip()
             key = exe.split()[0] if exe else name
             if key in seen or "olal" in f.lower(): continue
-            seen.add(key); out.append({"name": name, "exec": exe})
+            seen.add(key)
+            out.append({"name": name, "exec": exe, "icon": (ic.group(1).strip() if ic else key[0].upper()),
+                        "bin": key})
         except: pass
     return {"apps": out}
 
-def launch(exe):
+# --------------------------------------------------------------------
+#  INTEGRAÇÃO DE APPS (janelas X11 maximizadas, sem decoração, gerenciadas
+#  pela barra do Olal). Tudo via wmctrl/xdotool - depende do setup-desktop.sh
+#  ter instalado esses pacotes.
+# --------------------------------------------------------------------
+def windows():
+    """Lista janelas X11 abertas (id, título, classe)."""
     try:
-        env = dict(os.environ, DISPLAY=os.environ.get("DISPLAY", ":0"))
+        out = subprocess.check_output(
+            ["wmctrl", "-lx"], stderr=subprocess.DEVNULL, text=True, timeout=3
+        ).strip().splitlines()
+        wins = []
+        for line in out:
+            parts = line.split(None, 4)
+            if len(parts) < 5: continue
+            wid, host, cls = parts[0], parts[1], parts[2]
+            title = parts[4].strip()
+            # ignora a propria barra do Olal (tint2) e dockapps
+            if cls.lower().startswith("tint2"): continue
+            wins.append({"id": wid, "title": title, "class": cls,
+                         "is_olal": "firefox" in cls.lower() or "chromium" in cls.lower()})
+        return {"windows": wins}
+    except Exception as e:
+        return {"windows": [], "error": str(e)}
+
+def focus_window(win_id_or_title):
+    """Traz uma janela para frente. Aceita ID hex (0x...) ou substring do título."""
+    if not shutil.which("wmctrl"):
+        return {"ok": False, "error": "wmctrl nao instalado"}
+    try:
+        if win_id_or_title.startswith("0x"):
+            subprocess.run(["wmctrl", "-ia", win_id_or_title], check=False, timeout=3)
+        else:
+            subprocess.run(["wmctrl", "-a", win_id_or_title], check=False, timeout=3)
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+def close_window(win_id_or_title):
+    """Fecha uma janela (X)."""
+    if not shutil.which("wmctrl"):
+        return {"ok": False, "error": "wmctrl nao instalado"}
+    try:
+        if win_id_or_title.startswith("0x"):
+            subprocess.run(["wmctrl", "-ic", win_id_or_title], check=False, timeout=3)
+        else:
+            subprocess.run(["wmctrl", "-c", win_id_or_title], check=False, timeout=3)
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+def launch_integrated(exe):
+    """Lança um app e o integra como "tela" dentro do Olal:
+       1) dispara o app em background;
+       2) espera a janela X11 aparecer (até 8s);
+       3) maximiza + remove decoração + traz pra frente;
+       4) retorna o ID da janela p/ a interface gerenciar.
+       Assim apps baixados viram "telas" do Olal, não janelas aleatórias."""
+    if not shutil.which("wmctrl"):
+        # sem wmctrl, fallback pro launch simples (UX antiga)
+        return launch(exe)
+    try:
+        # janelas ANTES do lançamento (pra detectar a nova)
+        before = {w["id"] for w in windows().get("windows", [])}
+        env = dict(os.environ, DISPLAY=DISPLAY)
+        # dispara o app (bash -lc pra herdar PATH/profile)
+        subprocess.Popen(["bash", "-lc", exe + " >/dev/null 2>&1 &"], env=env)
+        # espera a janela nova aparecer (até 8s)
+        new_id = None
+        for _ in range(16):
+            time.sleep(0.5)
+            after = windows().get("windows", [])
+            for w in after:
+                if w["id"] not in before:
+                    new_id = w["id"]; break
+            if new_id: break
+        if not new_id:
+            return {"ok": True, "integrated": False, "msg": "app lançado (sem janela X11 detectada)"}
+        # integra: maximiza + fullscreen + remove decoração + foca
+        for args in (["wmctrl","-ir",new_id,"-b","add,maximized_vert,maximized_horz"],
+                     ["wmctrl","-ir",new_id,"-b","add,fullscreen"],
+                     ["wmctrl","-ir",new_id,"-b","remove,decorated"],
+                     ["wmctrl","-ia",new_id]):
+            try: subprocess.run(args, check=False, timeout=2)
+            except: pass
+        return {"ok": True, "integrated": True, "win_id": new_id}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+def launch(exe):
+    """Launch simples (sem integração de janela) — usado como fallback."""
+    try:
+        env = dict(os.environ, DISPLAY=DISPLAY)
         subprocess.Popen(["bash","-lc", exe + " >/dev/null 2>&1 &"], env=env)
         return {"ok": True}
     except Exception as e:
@@ -92,8 +193,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *a, **k): super().__init__(*a, directory=ROOT, **k)
     def log_message(self, *a): pass
     def end_headers(self):
-        # nunca deixa o navegador servir a interface do cache (evita ficar preso
-        # em versao antiga depois de atualizar)
+        # nunca deixa o navegador servir a interface do cache
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
         self.send_header("Pragma", "no-cache"); self.send_header("Expires", "0")
         super().end_headers()
@@ -104,12 +204,17 @@ class H(http.server.SimpleHTTPRequestHandler):
         self.end_headers(); self.wfile.write(b)
     def do_GET(self):
         u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query)
-        if u.path == "/api/sysinfo": return self._json(sysinfo())
-        if u.path == "/api/apps":    return self._json(listapps())
-        if u.path == "/api/ls":      return self._json(listdir(q.get("path",[HOME])[0]))
+        if u.path == "/api/sysinfo":  return self._json(sysinfo())
+        if u.path == "/api/apps":     return self._json(listapps())
+        if u.path == "/api/windows":  return self._json(windows())
+        if u.path == "/api/ls":       return self._json(listdir(q.get("path",[HOME])[0]))
         if u.path == "/api/read":
             try: return self._json({"text": open(os.path.expanduser(q.get("path",[""])[0])).read()[:100000]})
             except Exception as e: return self._json({"text": "", "error": str(e)})
+        if u.path == "/api/focus":
+            return self._json(focus_window(q.get("win",[""])[0]))
+        if u.path == "/api/close":
+            return self._json(close_window(q.get("win",[""])[0]))
         return super().do_GET()
     def do_POST(self):
         n = int(self.headers.get("Content-Length",0)); body = self.rfile.read(n) if n else b"{}"
@@ -118,7 +223,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         u = urllib.parse.urlparse(self.path)
         if u.path == "/api/ai":     return self._json(ai_proxy(data.get("prompt","")))
         if u.path == "/api/exec":   return self._json(run(data.get("cmd",""), data.get("cwd")))
-        if u.path == "/api/launch": return self._json(launch(data.get("exec","")))
+        if u.path == "/api/launch": return self._json(launch_integrated(data.get("exec","")))
         if u.path == "/api/power":
             a = data.get("action")
             if a == "restart": subprocess.Popen(["bash","-lc","sleep 1; pkill -f olal-shell; pkill chromium; pkill firefox-esr"]); return self._json({"ok":True})

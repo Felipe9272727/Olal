@@ -145,12 +145,33 @@
   #power.on{ display:flex; }
   #power .card{ background:#111c30; border-radius:20px; padding:22px; width:80%; max-width:300px;
     display:flex; flex-direction:column; gap:12px; box-shadow:0 20px 50px #000a; }
+  /* badge de janelas abertas no status bar */
+  #wbadge{ background:#4F46E5; color:#fff; border-radius:10px; padding:1px 9px; font-size:12px;
+    font-weight:700; margin-left:6px; cursor:pointer; }
+  #wbadge.gone{ display:none; }
+  /* gerenciador de janelas: lista apps X11 abertos */
+  #winmgr{ position:absolute; inset:0; z-index:75; display:none; align-items:flex-start; justify-content:center;
+    background:#04070ecc; padding-top:60px; }
+  #winmgr.on{ display:flex; }
+  #winmgr .card{ background:#111c30; border-radius:18px; padding:18px; width:88%; max-width:380px;
+    display:flex; flex-direction:column; gap:8px; box-shadow:0 20px 50px #000a; max-height:75vh; overflow:auto; }
+  #winmgr .card h3{ margin:0 0 4px; color:#2BD17A; font-size:16px; }
+  #winmgr .wrow{ display:flex; align-items:center; gap:11px; background:#16203a; border-radius:11px;
+    padding:10px 12px; cursor:pointer; }
+  #winmgr .wrow .ico{ width:30px; height:30px; border-radius:8px; background:linear-gradient(135deg,#4f46e5,#6366F1);
+    display:flex; align-items:center; justify-content:center; font-weight:700; color:#fff; }
+  #winmgr .wrow .ttl{ flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+  #winmgr .wrow .ttl small{ display:block; color:#7b8aa3; font-size:11px; font-weight:400; }
+  #winmgr .wrow .x{ color:#ef4444; font-size:18px; padding:4px; }
+  #winmgr .wrow.olal{ border:1px solid #2BD17A; }
+  #winmgr .hint{ font-size:12px; color:#7b8aa3; margin-bottom:4px; line-height:1.5; }
 </style>
 </head>
 <body>
 <div id="screen">
   <div id="status"><span class="olal">olal</span>
-    <span class="right"><span class="dot"></span><span id="clock">--:--</span></span></div>
+    <span class="right"><span class="dot"></span><span id="clock">--:--</span>
+    <span id="wbadge" class="wbadge gone" onclick="openWinMgr()">0 ◫</span></span></div>
   <div id="home">
     <div id="greet">Bom dia</div>
     <div id="aihome" onclick="aiOpen()">
@@ -181,6 +202,17 @@
       <button class="btn" onclick="sysPower('restart')">Reiniciar interface</button>
       <button class="btn r" onclick="sysPower('shutdown')">Desligar Olal OS</button>
       <button class="btn s" onclick="powerMenu(false)">Cancelar</button>
+    </div>
+  </div>
+
+  <!-- gerenciador de janelas: apps X11 abertos, com botao voltar-ao-Olal -->
+  <div id="winmgr" onclick="if(event.target.id==='winmgr')closeWinMgr()">
+    <div class="card">
+      <h3>▣ Janelas abertas</h3>
+      <div class="hint">Toque numa janela para trazer pra frente. Apps abrem maximizados e sem decoração — pra voltar ao Olal, toque em "Olal" aqui ou na barra do topo.</div>
+      <button class="btn g" style="width:100%;margin-bottom:6px" onclick="focusOlal()">⤴ Voltar ao Olal</button>
+      <div id="wmlist"></div>
+      <button class="btn s" style="width:100%;margin-top:6px" onclick="closeWinMgr()">Fechar</button>
     </div>
   </div>
 
@@ -341,7 +373,7 @@ function aiHandle(resp){
 /* ===== ponte com o SISTEMA REAL (backend Olal) - faz o Olal ser um OS ===== */
 /* carimbo de versao: aparece embaixo da home. Se NAO mudar depois de atualizar,
    o update nao chegou na interface (VPN bloqueou o git ou cache do navegador). */
-const OLAL_BUILD = "2026-06-18 • GPU + tuning distro v8";
+const OLAL_BUILD = "2026-06-19 • apps integrados + perf v9";
 window.addEventListener("load",()=>{ const e=document.getElementById("build"); if(e) e.textContent="Olal OS  ·  "+OLAL_BUILD; });
 
 const SYS_API = location.origin;
@@ -353,10 +385,64 @@ async function sysInfo(){ const r=await fetch(SYS_API+"/api/sysinfo"); return r.
 async function sysApps(){ const r=await fetch(SYS_API+"/api/apps"); return r.json(); }
 async function sysLaunch(exe){ return fetch(SYS_API+"/api/launch",{method:"POST",
   headers:{"Content-Type":"application/json"},body:JSON.stringify({exec:exe})}); }
+async function sysWindows(){ try{ const r=await fetch(SYS_API+"/api/windows"); return r.json(); }catch(e){ return {windows:[]}; } }
+async function sysFocus(win){ return fetch(SYS_API+"/api/focus?win="+encodeURIComponent(win)); }
+async function sysCloseWin(win){ return fetch(SYS_API+"/api/close?win="+encodeURIComponent(win)); }
 async function sysPower(action){ try{ await fetch(SYS_API+"/api/power",{method:"POST",
   headers:{"Content-Type":"application/json"},body:JSON.stringify({action})}); }catch(e){}
   powerMenu(false); }
 function powerMenu(on){ document.getElementById("power").classList.toggle("on", on!==false); }
+
+/* ===== GERENCIADOR DE JANELAS (apps X11 abertos) ===== */
+/* A cada 3s consulta /api/windows e atualiza o badge na status bar. Quando
+   o usuario toca no badge, abre o overlay com a lista de janelas; tocar
+   numa janela traz ela pra frente (wmctrl -ia). Apps abertos via App Store
+   ou Programas viram "telas" dentro do Olal - nao janelas aleatorias. */
+let WIN_POLL=null, WINS=[];
+async function pollWindows(){
+  if(!SYS_OK){ document.getElementById("wbadge").classList.add("gone"); return; }
+  try{
+    const d = await sysWindows();
+    WINS = d.windows || [];
+    const n = WINS.length;
+    const b = document.getElementById("wbadge");
+    if(n>0){ b.textContent = n+" ◫"; b.classList.remove("gone"); }
+    else b.classList.add("gone");
+  }catch(e){}
+}
+function openWinMgr(){
+  const list = document.getElementById("wmlist");
+  if(!SYS_OK || !WINS.length){
+    list.innerHTML = '<div style="color:#7b8aa3;padding:14px;text-align:center">nenhuma janela aberta.<br>Abra um app em <b>Programas</b> ou <b>App Store</b>.</div>';
+  } else {
+    list.innerHTML = WINS.map(w=>{
+      const isOlal = w.is_olal;
+      return `<div class="wrow ${isOlal?"olal":""}" data-w="${w.id}">
+        <div class="ico">${(w.title||"?")[0].toUpperCase()}</div>
+        <div class="ttl">${escapeHtml(w.title||"(sem título)")}<small>${escapeHtml(w.class||"")}</small></div>
+        ${isOlal?"":'<div class="x" data-x="'+w.id+'">✕</div>'}
+      </div>`;
+    }).join("");
+    list.querySelectorAll(".wrow").forEach(r=>{
+      r.onclick = (e)=>{
+        if(e.target.dataset.x){ e.stopPropagation(); sysCloseWin(e.target.dataset.x).then(()=>setTimeout(refreshWinMgr,300)); return; }
+        sysFocus(r.dataset.w).then(()=>setTimeout(closeWinMgr,200));
+      };
+    });
+  }
+  document.getElementById("winmgr").classList.add("on");
+}
+function refreshWinMgr(){ pollWindows().then(()=>{ if(document.getElementById("winmgr").classList.contains("on")) openWinMgr(); }); }
+function closeWinMgr(){ document.getElementById("winmgr").classList.remove("on"); }
+async function focusOlal(){
+  // traz o navegador do Olal (Firefox/Chromium) de volta pra frente
+  const olal = WINS.find(w=>w.is_olal);
+  if(olal){ await sysFocus(olal.id); closeWinMgr(); }
+  else closeWinMgr();
+}
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+// inicia o polling de janelas quando o sistema detecta o backend
+window.addEventListener("load",()=>{ setTimeout(pollWindows, 1500); WIN_POLL=setInterval(pollWindows, 3000); });
 /* detecta o backend com RETRY: ao abrir, o python pode ainda estar subindo.
    tenta varias vezes ate achar, pra Arquivos/Programas/App Store nunca caírem
    no "preview" por engano. Reexecuta a tela aberta quando o backend aparece. */
@@ -868,8 +954,10 @@ function appPrograms(b){
         <div style="flex:1"><div style="font-weight:600">${a.name}</div>
         <div style="color:#7b8aa3;font-size:11px">${a.exec.split(" ")[0]}</div></div>
         <div style="color:#2BD17A;font-size:20px">▶</div></div>`).join("");
-    list.querySelectorAll(".prow").forEach(row=>row.onclick=()=>{ sysLaunch(row.dataset.e);
-      row.style.opacity=".5"; setTimeout(()=>row.style.opacity="",600); });
+    list.querySelectorAll(".prow").forEach(row=>row.onclick=()=>{
+      row.style.opacity=".5";
+      sysLaunch(row.dataset.e).then(()=>setTimeout(()=>{ row.style.opacity=""; pollWindows(); }, 1200));
+    });
   }).catch(()=>list.innerHTML='<div style="color:#ef4444">erro ao listar</div>');
 }
 
