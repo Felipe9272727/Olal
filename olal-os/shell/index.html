@@ -372,6 +372,14 @@ window.addEventListener("load",olalApply);
 [80,200,500,1000,2000,3500].forEach(t=>setTimeout(olalApply,t));
 let _fitN=0, _fitIv=setInterval(()=>{ olalApply(); if(++_fitN>8) clearInterval(_fitIv); },800);
 
+/* a interface E fixa: NADA deve rolar a janela (o teclado virtual ou o foco
+   num input nao pode empurrar a tela inteira pra fora). Forca volta ao topo. */
+function _noScroll(){ if(window.scrollX||window.scrollY) window.scrollTo(0,0);
+  const se=document.scrollingElement; if(se&&(se.scrollTop||se.scrollLeft)){ se.scrollTop=0; se.scrollLeft=0; } }
+window.addEventListener("scroll",_noScroll,{passive:true});
+window.addEventListener("focusin",()=>setTimeout(_noScroll,0));
+window.addEventListener("focusout",()=>setTimeout(_noScroll,0));
+
 /* efeito ripple ao tocar (toda a interface fica mais "viva") */
 document.addEventListener("pointerdown",e=>{
   const t=e.target.closest(".app, .btn, .ico, #aihome, .back, .ytrow, [data-ripple]");
@@ -443,7 +451,7 @@ let aiWelcomed=false;
 function aiOpen(prefill){ document.getElementById("aiover").classList.add("on");
   if(!aiWelcomed){ aiWelcomed=true; aiBubble("a","Oi! Eu sou a Olal AI e comando este sistema. Posso conversar e tambem CONTROLAR a OS: peca 'toca lofi no youtube', 'abre a calculadora', 'pesquisa gatos'..."); }
   if(prefill){ document.getElementById("aimsg").value=prefill; aiSend(); }
-  else document.getElementById("aimsg").focus(); }
+  else document.getElementById("aimsg").focus({preventScroll:true}); }
 function aiClose(){ document.getElementById("aiover").classList.remove("on"); }
 /* parser LOCAL de comandos: a IA controla a OS sem depender da internet */
 function ytGo(q){ openApp(APP_IDX.youtube); setTimeout(()=>{const e=document.getElementById("ytq");
