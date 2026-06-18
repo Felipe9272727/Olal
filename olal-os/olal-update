@@ -3,13 +3,16 @@
 #  Olal OS - atualiza a interface e o backend para a versao
 #  mais nova (puxa do GitHub e copia pro Debian).
 # ============================================================
-set -e
 SRC="$HOME/Olal"
 DEB="$PREFIX/var/lib/proot-distro/installed-rootfs/debian"
 
 [ -d "$SRC/.git" ] || { echo "repo nao encontrado em $SRC; rode o install primeiro"; exit 1; }
 echo ">> baixando a versao mais nova..."
-( cd "$SRC" && git pull --ff-only ) || ( cd "$SRC" && git fetch && git reset --hard origin/main )
+# reset --hard e o caminho principal: pega a versao de origin/main mesmo que a
+# arvore local esteja suja (chmod, fim de linha) ou nao possa fast-forward.
+( cd "$SRC" && git fetch origin main && git reset --hard origin/main ) \
+  || ( cd "$SRC" && git pull ) \
+  || { echo "!! falha ao baixar (rede/VPN?). Tente de novo com a VPN desligada."; exit 1; }
 
 echo ">> atualizando a interface e o backend do Olal OS..."
 mkdir -p "$DEB/opt/olal/shell"

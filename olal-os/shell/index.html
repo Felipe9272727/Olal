@@ -348,8 +348,18 @@ async function sysPower(action){ try{ await fetch(SYS_API+"/api/power",{method:"
   headers:{"Content-Type":"application/json"},body:JSON.stringify({action})}); }catch(e){}
   powerMenu(false); }
 function powerMenu(on){ document.getElementById("power").classList.toggle("on", on!==false); }
-if(location.protocol.startsWith("http"))
-  fetch(SYS_API+"/api/sysinfo").then(r=>r.ok&&(SYS_OK=true)).catch(()=>{});
+/* detecta o backend com RETRY: ao abrir, o python pode ainda estar subindo.
+   tenta varias vezes ate achar, pra Arquivos/Programas/App Store nunca caírem
+   no "preview" por engano. Reexecuta a tela aberta quando o backend aparece. */
+let _probeN=0;
+function probeSys(){
+  if(SYS_OK || !location.protocol.startsWith("http")) return;
+  fetch(SYS_API+"/api/sysinfo").then(r=>{ if(r.ok){ SYS_OK=true;
+      try{ reopenApp(); }catch(e){}   // re-renderiza a tela aberta agora que ha backend
+  }}).catch(()=>{});
+  if(++_probeN<12 && !SYS_OK) setTimeout(probeSys, 600);
+}
+probeSys();
 /* tela de boot: some quando a interface esta pronta */
 window.addEventListener("load",()=>setTimeout(()=>document.getElementById("boot").classList.add("gone"),1600));
 
@@ -383,6 +393,7 @@ const APPS = [
   {n:"Olal JS", c:"#FACC15", i:"JS", f:appJS},
   {n:"YouTube", c:"#FF0000", i:"YT", f:appYT},
   {n:"Programas", c:"#6366F1", i:"▦", f:appPrograms},
+  {n:"App Store", c:"#EC4899", i:"⤓", f:appStore},
 ];
 
 /* ajuste mobile UNIVERSAL: escala o design (largura fixa de celular) pra
@@ -392,8 +403,11 @@ const screenEl=document.getElementById("screen");
 const DW=400;                                     // largura de design (celular)
 let userScale=parseFloat(localStorage.getItem("olal_scale")||"1")||1;
 function olalApply(){
+  const vv=window.visualViewport;
   const w=window.innerWidth||document.documentElement.clientWidth||screen.width;
-  const h=window.innerHeight||document.documentElement.clientHeight||screen.height;
+  // usa a altura do visualViewport: quando o teclado virtual sobe, ela encolhe,
+  // entao a interface se ajusta e o campo de digitar fica visivel acima do teclado.
+  const h=(vv&&vv.height)||window.innerHeight||document.documentElement.clientHeight||screen.height;
   const s=Math.max(0.3, (w/DW)*userScale);
   screenEl.style.width=DW+"px";
   screenEl.style.height=(h/s)+"px";
@@ -406,6 +420,9 @@ olalApply();
 window.addEventListener("resize",olalApply);
 window.addEventListener("orientationchange",olalApply);
 window.addEventListener("load",olalApply);
+/* reage ao teclado virtual subindo/descendo (mantem o input visivel) */
+if(window.visualViewport){ window.visualViewport.addEventListener("resize",olalApply);
+  window.visualViewport.addEventListener("scroll",olalApply); }
 /* re-aplica nos primeiros segundos + a cada 1s no inicio (o Firefox no
    Termux:X11 pode reportar a largura atrasado) */
 [80,200,500,1000,2000,3500].forEach(t=>setTimeout(olalApply,t));
@@ -465,11 +482,13 @@ APPS.forEach((a,idx)=>{
 });
 
 const view=document.getElementById("view"), body=document.getElementById("body"), vtitle=document.getElementById("vtitle");
-let viewClear=null;
-function openApp(i){ clearTimeout(viewClear); vtitle.textContent=APPS[i].n;
+let viewClear=null, curApp=-1;
+function openApp(i){ clearTimeout(viewClear); curApp=i; vtitle.textContent=APPS[i].n;
   body.innerHTML=""; APPS[i].f(body); requestAnimationFrame(()=>view.classList.add("on")); }
-function closeApp(){ view.classList.remove("on");
+function closeApp(){ view.classList.remove("on"); curApp=-1;
   viewClear=setTimeout(()=>{ if(!view.classList.contains("on")) body.innerHTML=""; },320); }
+/* re-renderiza o app aberto (ex.: quando o backend e detectado depois de abrir) */
+function reopenApp(){ if(curApp>=0 && view.classList.contains("on")){ body.innerHTML=""; APPS[curApp].f(body); } }
 
 /* relogio + saudacao */
 function tick(){
@@ -832,6 +851,68 @@ function appPrograms(b){
       row.style.opacity=".5"; setTimeout(()=>row.style.opacity="",600); });
   }).catch(()=>list.innerHTML='<div style="color:#ef4444">erro ao listar</div>');
 }
+
+/* ----- App Store: instala programas Linux REAIS (apt) com um toque ----- */
+const STORE_APPS = [
+  {n:"Firefox",     pkg:"firefox-esr",       bin:"firefox-esr",  i:"🦊", d:"Navegador web completo"},
+  {n:"Chromium",    pkg:"chromium",          bin:"chromium",     i:"🌐", d:"Navegador do Google (open source)"},
+  {n:"GIMP",        pkg:"gimp",              bin:"gimp",         i:"🎨", d:"Editor de imagens profissional"},
+  {n:"LibreOffice", pkg:"libreoffice",       bin:"libreoffice",  i:"📄", d:"Pacote de escritorio (Word/Excel)"},
+  {n:"VLC",         pkg:"vlc",               bin:"vlc",          i:"🎬", d:"Player de video e musica"},
+  {n:"Inkscape",    pkg:"inkscape",          bin:"inkscape",     i:"✒️", d:"Desenho vetorial"},
+  {n:"Blender",     pkg:"blender",           bin:"blender",      i:"🧊", d:"Modelagem e animacao 3D"},
+  {n:"Audacity",    pkg:"audacity",          bin:"audacity",     i:"🎵", d:"Editor de audio"},
+  {n:"htop",        pkg:"htop",              bin:"htop",         i:"📊", d:"Monitor de processos (terminal)"},
+  {n:"neofetch",    pkg:"neofetch",          bin:"neofetch",     i:"💻", d:"Mostra info do sistema"},
+  {n:"git",         pkg:"git",               bin:"git",          i:"🔧", d:"Controle de versao"},
+  {n:"Python 3",    pkg:"python3",           bin:"python3",      i:"🐍", d:"Linguagem Python"},
+  {n:"Node.js",     pkg:"nodejs",            bin:"node",         i:"🟩", d:"JavaScript no servidor"},
+  {n:"nano",        pkg:"nano",              bin:"nano",         i:"📝", d:"Editor de texto simples"},
+  {n:"Vim",         pkg:"vim",               bin:"vim",          i:"📗", d:"Editor de texto avancado"},
+  {n:"Mousepad",    pkg:"mousepad",          bin:"mousepad",     i:"🗒️", d:"Bloco de notas grafico"},
+  {n:"File Manager",pkg:"pcmanfm",           bin:"pcmanfm",      i:"🗂️", d:"Gerenciador de arquivos grafico"},
+];
+function appStore(b){
+  b.innerHTML=`<div class="pad" style="height:100%;display:flex;flex-direction:column">
+    <div style="font-size:13px;color:#94a3b8;margin-bottom:10px">Toque em <b>Instalar</b> pra baixar programas Linux de verdade no seu Olal OS.</div>
+    <div id="slog" style="display:none;font-family:monospace;font-size:12px;background:#0a1120;border:1px solid #1e2a44;border-radius:10px;padding:10px;margin-bottom:10px;max-height:140px;overflow:auto;white-space:pre-wrap"></div>
+    <div id="store" style="flex:1;overflow:auto"></div></div>`;
+  const wrap=b.querySelector("#store"), slog=b.querySelector("#slog");
+  if(!SYS_OK){ wrap.innerHTML='<div style="color:#94a3b8;padding:16px">A loja instala apps de verdade quando o Olal OS esta rodando (backend ativo). Abra pelo <b>./olal</b> no Termux.</div>'; return; }
+  wrap.innerHTML=STORE_APPS.map((a,i)=>
+    `<div class="srow" data-pkg="${a.pkg}" data-bin="${a.bin}" data-n="${a.n}"
+       style="display:flex;align-items:center;gap:13px;background:#16203a;border-radius:14px;padding:13px;margin-bottom:9px;animation:pop .35s var(--ease) ${i*0.02}s backwards">
+      <div style="width:44px;height:44px;border-radius:12px;background:#0e1730;display:flex;align-items:center;justify-content:center;font-size:24px">${a.i}</div>
+      <div style="flex:1;min-width:0"><div style="font-weight:600">${a.n}</div>
+        <div style="color:#7b8aa3;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.d}</div></div>
+      <button class="btn s sbtn" style="width:auto;padding:9px 16px;margin:0;font-size:14px">Instalar</button></div>`).join("");
+  // marca o que ja esta instalado (checa os binarios de uma vez)
+  sysExec("for b in "+STORE_APPS.map(a=>a.bin).join(" ")+"; do command -v $b >/dev/null && echo $b; done")
+    .then(d=>{ const have=new Set((d.out||"").split(/\s+/).filter(Boolean));
+      wrap.querySelectorAll(".srow").forEach(row=>{ if(have.has(row.dataset.bin)){
+        const btn=row.querySelector(".sbtn"); btn.textContent="✓ Instalado"; btn.classList.add("g"); btn.disabled=true; btn.style.opacity=".7"; } });
+    }).catch(()=>{});
+  wrap.querySelectorAll(".srow").forEach(row=>{
+    const btn=row.querySelector(".sbtn");
+    btn.onclick=()=>{ if(btn.disabled) return;
+      const pkg=row.dataset.pkg, nm=row.dataset.n;
+      btn.disabled=true; btn.textContent="instalando…"; btn.classList.add("spin");
+      slog.style.display="block"; slog.textContent="📦 Instalando "+nm+" ("+pkg+")…\nIsso pode demorar alguns minutos.\n";
+      // atualiza indices e instala; apt pode pedir sudo (no proot somos root)
+      sysExec("sudo apt-get update -y 2>&1 | tail -2; sudo apt-get install -y "+pkg+" 2>&1 | tail -25 || apt-get install -y "+pkg+" 2>&1 | tail -25", null)
+        .then(d=>{ slog.textContent += (d.out||""); slog.scrollTop=slog.scrollHeight;
+          btn.classList.remove("spin");
+          return sysExec("command -v "+row.dataset.bin+" >/dev/null && echo OK || echo NO"); })
+        .then(d=>{ if((d.out||"").includes("OK")){ btn.textContent="✓ Instalado"; btn.classList.add("g"); btn.style.opacity=".7";
+            slog.textContent += "\n✅ "+nm+" instalado! Abra em Programas."; }
+          else { btn.textContent="Tentar de novo"; btn.disabled=false;
+            slog.textContent += "\n⚠️ Nao consegui confirmar a instalacao de "+nm+". Veja o log acima (rede/VPN?)."; }
+          slog.scrollTop=slog.scrollHeight; })
+        .catch(e=>{ btn.textContent="Tentar de novo"; btn.disabled=false; btn.classList.remove("spin");
+          slog.textContent += "\n❌ erro: "+e; });
+    };
+  });
+}
 function appSys(b){
   b.innerHTML=`<div class="pad"><div id="sysbox" style="background:#0e1a18;border-radius:12px;padding:16px;line-height:1.9">carregando...</div></div>`;
   const box=b.querySelector("#sysbox");
@@ -866,14 +947,29 @@ function appFiles(b){
   const fpath=b.querySelector("#fpath"), flist=b.querySelector("#flist");
   const fmtsz=n=>n>1048576?(n/1048576).toFixed(1)+" MB":n>1024?(n/1024).toFixed(0)+" KB":n+" B";
   function open(path){
-    if(!SYS_OK){ flist.innerHTML='<div style="color:#94a3b8;padding:16px">Arquivos reais aparecem no Olal OS instalado.</div>'; fpath.textContent="(preview)"; return; }
+    if(!SYS_OK){ flist.innerHTML='<div style="color:#94a3b8;padding:16px">Arquivos reais aparecem no Olal OS instalado (abra pelo <b>./olal</b>).</div>'; fpath.textContent="(preview)"; return; }
     sysLs(path).then(d=>{ fpath.textContent="📁 "+d.path;
+      if(d.error){ flist.innerHTML='<div style="color:#ef4444;padding:16px">'+d.error+'</div>'; return; }
       let h="";
       if(d.parent && d.parent!==d.path) h+=row("..","dir",0,d.parent);
       for(const it of d.items) h+=row(it.name, it.dir?"dir":"file", it.size, (d.path.endsWith("/")?d.path:d.path+"/")+it.name);
-      flist.innerHTML=h;
-      flist.querySelectorAll("[data-p]").forEach(el=>el.onclick=()=>{ if(el.dataset.d==="1") open(el.dataset.p); });
-    }).catch(()=>flist.innerHTML='<div style="color:#ef4444;padding:16px">erro ao ler</div>');
+      flist.innerHTML=h||'<div style="color:#94a3b8;padding:16px">(pasta vazia)</div>';
+      flist.querySelectorAll("[data-p]").forEach(el=>el.onclick=()=>{
+        if(el.dataset.d==="1") open(el.dataset.p); else viewFile(el.dataset.p); });
+    }).catch(()=>flist.innerHTML='<div style="color:#ef4444;padding:16px">erro ao ler (backend offline?)</div>');
+  }
+  function viewFile(path){
+    const name=path.split("/").pop();
+    fetch(SYS_API+"/api/read?path="+encodeURIComponent(path)).then(r=>r.json()).then(d=>{
+      flist.innerHTML=
+        `<div style="display:flex;gap:8px;margin-bottom:10px">
+           <button class="btn s" style="width:auto;padding:8px 14px;margin:0" id="fback">‹ Voltar</button>
+           <div style="flex:1;align-self:center;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</div></div>
+         <pre style="background:#0a1120;border:1px solid #1e2a44;border-radius:10px;padding:12px;overflow:auto;font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:calc(100% - 50px)">${
+           d.error?("nao da pra abrir: "+d.error):(d.text||"(vazio)").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))}</pre>`;
+      const back=flist.querySelector("#fback");
+      if(back) back.onclick=()=>open(fpath.textContent.replace(/^📁 /,""));
+    }).catch(()=>{});
   }
   const row=(name,kind,size,full)=>
     `<div data-p="${full.replace(/"/g,'&quot;')}" data-d="${kind==='dir'?1:0}" style="display:flex;align-items:center;gap:12px;background:#1E293B;border-radius:10px;padding:11px;margin-bottom:7px;cursor:pointer">
