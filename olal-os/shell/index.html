@@ -211,11 +211,32 @@ abre a wikipedia dos gatos -> @@ACT {"app":"navegador","query":"https://pt.wikip
 abre a calculadora -> @@ACT {"app":"calc"}
 Se for so conversa, NAO inclua @@ACT.`;
 
-async function aiLLM(prompt){
-  const url="https://text.pollinations.ai/"+encodeURIComponent(prompt)+"?model=openai";
-  const ac=new AbortController(); const tm=setTimeout(()=>ac.abort(),22000);
-  try{ const r=await fetch(url,{signal:ac.signal}); if(!r.ok) throw new Error("status "+r.status); return (await r.text()).trim(); }
+/* tenta varios provedores de LLM (sem chave). Se a VPN bloquear um, tenta o
+   proximo; por ultimo tenta pelo BACKEND (fetch no servidor, caminho de rede
+   diferente do navegador - as vezes passa onde o navegador e barrado). */
+async function _fetchTxt(url,opt,ms){
+  const ac=new AbortController(); const tm=setTimeout(()=>ac.abort(),ms||20000);
+  try{ const r=await fetch(url,Object.assign({signal:ac.signal},opt||{}));
+    if(!r.ok) throw new Error("status "+r.status); const t=(await r.text()).trim();
+    if(!t) throw new Error("vazio"); return t; }
   finally{ clearTimeout(tm); }
+}
+async function aiLLM(prompt){
+  const enc=encodeURIComponent(prompt); let lastErr;
+  const tries=[
+    ()=>_fetchTxt("https://text.pollinations.ai/"+enc+"?model=openai"),
+    ()=>_fetchTxt("https://text.pollinations.ai/"+enc),
+    ()=>_fetchTxt("https://text.pollinations.ai/openai",{method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({model:"openai",messages:[{role:"user",content:prompt}]})})
+        .then(t=>{ try{const j=JSON.parse(t); return (j.choices?.[0]?.message?.content||t).trim();}catch(e){return t;} }),
+  ];
+  // ultimo recurso: proxy pelo backend do proprio Olal OS (so quando ha sistema)
+  if(SYS_OK) tries.push(()=>_fetchTxt(SYS_API+"/api/ai",{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt})},25000)
+      .then(t=>{ try{const j=JSON.parse(t); return (j.text||t).trim();}catch(e){return t;} }));
+  for(const fn of tries){ try{ return await fn(); }catch(e){ lastErr=e; } }
+  throw lastErr||new Error("sem resposta");
 }
 async function aiAsk(history){
   const turns = history.slice(-6).map(m=>(m.role==="user"?"Usuario":"Olal")+": "+m.content).join("\n");
