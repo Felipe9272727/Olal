@@ -76,6 +76,12 @@ sleep 3
 am start --user 0 -n com.termux.x11/com.termux.x11.MainActivity >/dev/null 2>&1 || true
 sleep 1
 
+# prioridade: rebaixa os servicos de fundo (virgl/pulseaudio) pra o NAVEGADOR
+# ganhar CPU. renice pra valor positivo (menor prioridade) e permitido sem root.
+for p in virgl_test_server virgl_test_server_android pulseaudio; do
+  pgrep -x "$p" >/dev/null 2>&1 && renice +5 -p $(pgrep -x "$p") >/dev/null 2>&1
+done
+
 echo ">> Abra o app Termux:X11 para ver o Olal OS."
 
 # 4) BOOTA o Olal OS: instala o codigo novo (de DENTRO, via /tmp compartilhado),
@@ -91,12 +97,21 @@ proot-distro login debian --shared-tmp -- /bin/bash -c '
     echo ">> Olal OS instalado dentro do Debian:"
     grep -o "OLAL_BUILD = \"[^\"]*\"" /opt/olal/shell/index.html 2>/dev/null | sed "s/OLAL_BUILD = />>   versao: /"
   fi
+  # ---- tuning do sistema (idempotente, barato): apt/dpkg mais rapido e leve ----
+  if [ ! -f /etc/apt/apt.conf.d/99olal ]; then
+    printf "APT::Install-Recommends \"false\";\nAPT::Install-Suggests \"false\";\nAcquire::Languages \"none\";\n" > /etc/apt/apt.conf.d/99olal 2>/dev/null
+  fi
+  if [ ! -f /etc/dpkg/dpkg.cfg.d/99olal-nodoc ]; then
+    printf "path-exclude /usr/share/doc/*\npath-exclude /usr/share/man/*\npath-exclude /usr/share/info/*\npath-exclude /usr/share/locale/*/LC_MESSAGES/*.mo\n" > /etc/dpkg/dpkg.cfg.d/99olal-nodoc 2>/dev/null
+  fi
   export DISPLAY=:0
   export PULSE_SERVER=127.0.0.1
   export GALLIUM_DRIVER=virpipe
   export MESA_GL_VERSION_OVERRIDE=4.3COMPAT
   export MESA_GLES_VERSION_OVERRIDE=3.2
   export MESA_NO_ERROR=1
+  export MALLOC_ARENA_MAX=2        # menos fragmentacao/CPU de heap em apps com threads
+  export MOZ_USE_XINPUT2=1         # input do Firefox mais responsivo (toque/scroll)
   mkdir -p /run/dbus
   dbus-launch openbox &
   sleep 2

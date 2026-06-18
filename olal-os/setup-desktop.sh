@@ -22,6 +22,12 @@ apt-get install -y --no-install-recommends \
 # o Firefox renderiza pelo mesmo caminho GTK/X11 do desktop (mais confiavel
 # que o Chromium); o Chromium fica como alternativa acelerada por zink.
 
+# ---------- tuning do sistema: apt/dpkg mais leve e rapido + cache de fontes ----------
+printf 'APT::Install-Recommends "false";\nAPT::Install-Suggests "false";\nAcquire::Languages "none";\n' > /etc/apt/apt.conf.d/99olal
+printf 'path-exclude /usr/share/doc/*\npath-exclude /usr/share/man/*\npath-exclude /usr/share/info/*\npath-exclude /usr/share/locale/*/LC_MESSAGES/*.mo\n' > /etc/dpkg/dpkg.cfg.d/99olal-nodoc
+# pre-gera o cache de fontes (1o boot do navegador nao trava montando fontes)
+fc-cache -f >/dev/null 2>&1 || true
+
 # ---------- identidade e apps do Olal ----------
 mkdir -p /opt/olal
 cd /root
