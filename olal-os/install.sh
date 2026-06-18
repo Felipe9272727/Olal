@@ -34,6 +34,7 @@ mkdir -p "$HOME/.olal"
 rm -rf "$HOME/.olal/shell"; cp -r "$SCRIPTDIR/shell" "$HOME/.olal/shell"
 cp "$SCRIPTDIR/olal"     "$HOME/olal";     chmod +x "$HOME/olal"
 cp "$SCRIPTDIR/olal-web" "$HOME/olal-web"; chmod +x "$HOME/olal-web"
+cp "$SCRIPTDIR/olal-update" "$HOME/olal-update"; chmod +x "$HOME/olal-update"
 
 echo ""
 echo "==================================================="
