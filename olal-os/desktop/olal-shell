@@ -5,16 +5,28 @@
 #  interface no 1o navegador que RENDERIZAR (firefox -> chromium).
 # ============================================================
 # auto-atualiza a interface do GitHub (best-effort; nao trava se offline/VPN)
+mkdir -p /opt/olal/shell
 B="https://raw.githubusercontent.com/Felipe9272727/Olal/main/olal-os/shell"
 for f in index.html backend.py model.js; do
   if timeout 12 curl -fsSL "$B/$f" -o "/opt/olal/shell/$f.new" 2>/dev/null && [ -s "/opt/olal/shell/$f.new" ]; then
     mv "/opt/olal/shell/$f.new" "/opt/olal/shell/$f"; echo ">> interface: $f atualizado do GitHub"
   else rm -f "/opt/olal/shell/$f.new"; fi
 done
+# AUTO-CURA: atualiza a si mesmo (o launcher) do GitHub. Assim, mesmo que a
+# copia do Termux pro Debian falhe, o olal-shell se conserta no proximo boot.
+SELF="https://raw.githubusercontent.com/Felipe9272727/Olal/main/olal-os/desktop/olal-shell"
+if timeout 12 curl -fsSL "$SELF" -o "/usr/local/bin/olal-shell.new" 2>/dev/null && [ -s "/usr/local/bin/olal-shell.new" ]; then
+  if ! cmp -s "/usr/local/bin/olal-shell.new" "/usr/local/bin/olal-shell"; then
+    mv "/usr/local/bin/olal-shell.new" "/usr/local/bin/olal-shell"; chmod +x /usr/local/bin/olal-shell
+    echo ">> launcher atualizado - reiniciando com a versao nova..."; exec /usr/local/bin/olal-shell "$@"
+  else rm -f "/usr/local/bin/olal-shell.new"; fi
+else rm -f "/usr/local/bin/olal-shell.new"; fi
 grep -o 'OLAL_BUILD = "[^"]*"' /opt/olal/shell/index.html 2>/dev/null | sed 's/OLAL_BUILD = />> versao da interface: /'
 pkill -f "olal/shell/backend.py" 2>/dev/null
 ( cd /opt/olal/shell && OLAL_PORT=8080 python3 backend.py >/dev/null 2>&1 & )
 sleep 1
+# limpa o cache do Firefox a cada boot (garante que nunca prende em versao velha)
+rm -rf "$HOME/.olal-ff/cache2" "$HOME/.cache/mozilla" 2>/dev/null
 # cache-buster: forca o Firefox a carregar a versao nova (nunca do cache)
 URL="http://localhost:8080/index.html?v=$(date +%s)"
 
