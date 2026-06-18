@@ -338,6 +338,17 @@ document.addEventListener("pointerdown",e=>{
   t.appendChild(rip); setTimeout(()=>rip.remove(),500);
 },{passive:true});
 
+/* gesto: deslizar da borda esquerda pra VOLTAR (nativo de celular) */
+let _sx=0,_sy=0,_st=0;
+document.addEventListener("touchstart",e=>{ const t=e.touches[0]; _sx=t.clientX; _sy=t.clientY; _st=Date.now(); },{passive:true});
+document.addEventListener("touchend",e=>{ const t=e.changedTouches[0];
+  const dx=t.clientX-_sx, dy=t.clientY-_sy, W=window.innerWidth, H=window.innerHeight;
+  if(Date.now()-_st<600 && _sx<W*0.13 && dx>W*0.22 && Math.abs(dy)<H*0.12){
+    if(document.getElementById("aiover").classList.contains("on")) aiClose();
+    else if(document.getElementById("power").classList.contains("on")) powerMenu(false);
+    else if(view.classList.contains("on")) closeApp();
+  }},{passive:true});
+
 const grid=document.getElementById("grid");
 APPS.forEach((a,idx)=>{
   const el=document.createElement("div"); el.className="app";
@@ -415,7 +426,7 @@ async function aiSend(){
   if(local){ aiBubble("a",local); aiHist.push({role:"assistant",content:local}); return; }
   // OS REAL (com backend) -> AGENTE com controle total: raciocina + executa + observa
   if(SYS_OK){
-    const b=aiBubble("a","🤖 pensando…"); const steps=[];
+    const b=aiBubble("a",""); b.innerHTML='<span class="spin"></span> pensando…'; const steps=[];
     const final=await aiAgent(t,(s)=>{ steps.push(s);
       b.textContent="🤖 "+steps.slice(-4).join("\n"); aiChat.scrollTop=aiChat.scrollHeight; });
     b.textContent=final; aiHist.push({role:"assistant",content:final}); aiChat.scrollTop=aiChat.scrollHeight; return;
