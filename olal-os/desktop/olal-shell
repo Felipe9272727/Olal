@@ -128,13 +128,32 @@ GPU_ENV=(MESA_LOADER_DRIVER_OVERRIDE=zink TU_DEBUG=noconform vblank_mode=0
   MESA_GL_VERSION_OVERRIDE=4.3COMPAT MESA_GLES_VERSION_OVERRIDE=3.2 MESA_NO_ERROR=1)
 [ -f "$ICD" ] && GPU_ENV+=("VK_ICD_FILENAMES=$ICD")
 
+# ---- RENDER SCALE: rasteriza em menos pixels (a CPU/GPU desenha menos) e o
+#      compositor da o upscale. MEDIDO ~2.5x mais rapido a 0.6-0.7. NAO mexe no
+#      tamanho da janela nem no toque (innerWidth fica igual) - so a nitidez cai
+#      um tico. Ajuste/desligue com OLAL_RENDER_SCALE (1 = nativo, sem reducao).
+RSCALE="${OLAL_RENDER_SCALE:-0.7}"
+DSF_FLAG=""; case "$RSCALE" in 1|1.0|1.00) ;; *) DSF_FLAG="--force-device-scale-factor=$RSCALE";; esac
+
+# OPCIONAL (faz o FIREFOX tambem ganhar): reduz a resolucao do X inteiro via
+# xrandr. OFF por padrao - em alguns aparelhos pode bagunçar geometria/toque.
+# Ligar com:  export OLAL_XSCALE=0.8   (antes do ./olal). Verifica e reverte
+# se o X nao responder. Quando ligado, zera o DSF do Chromium (evita reduzir 2x).
+if [ -n "$OLAL_XSCALE" ] && command -v xrandr >/dev/null 2>&1; then
+  XOUT=$(xrandr -q 2>/dev/null | awk '/ connected/{print $1; exit}')
+  if [ -n "$XOUT" ] && xrandr --output "$XOUT" --scale "${OLAL_XSCALE}x${OLAL_XSCALE}" 2>/dev/null; then
+    if xdpyinfo >/dev/null 2>&1; then echo ">> X render-scale ${OLAL_XSCALE}x ativo (Firefox tambem mais fluido)."; DSF_FLAG="";
+    else xrandr --output "$XOUT" --scale 1x1 2>/dev/null; echo ">> xrandr revertido (X nao respondeu)."; fi
+  fi
+fi
+
 # 1) CHROMIUM acelerado por GPU (Turnip/zink) - o caminho RAPIDO de verdade.
 #    --kiosk: tela cheia, sem URL bar, sem tabs. Interface do Olal em tela cheia.
 if [ "$GPU_ON" = 1 ] && [ "$HAVE_SHOT" = 1 ] && command -v chromium >/dev/null; then
-  run_browser "Chromium GPU (Turnip/zink)" env "${GPU_ENV[@]}" \
+  run_browser "Chromium GPU (Turnip/zink, render ${RSCALE}x)" env "${GPU_ENV[@]}" \
     chromium --no-sandbox --kiosk --ozone-platform=x11 --enable-features=UseOzonePlatform,VaapiVideoDecoder \
     --use-gl=egl --ignore-gpu-blocklist --enable-gpu-rasterization --enable-zero-copy \
-    --canvas-oop-rasterization --autoplay-policy=no-user-gesture-required \
+    --canvas-oop-rasterization --autoplay-policy=no-user-gesture-required $DSF_FLAG \
     --disable-background-timer-throttling --no-first-run --disable-sync --disable-translate \
     --disable-extensions --disable-component-update --user-data-dir="$HOME/.olal-chrome" "$URL" && exit 0
 fi
@@ -149,9 +168,9 @@ fi
 [ -n "$FF" ] && run_browser "Firefox (software)" \
   "$FF" --kiosk --profile "$PROF" --no-remote "$URL" && exit 0
 # 4) CHROMIUM swiftshader em processo unico (ultimo recurso)
-command -v chromium >/dev/null && run_browser "Chromium swiftshader" \
+command -v chromium >/dev/null && run_browser "Chromium swiftshader (render ${RSCALE}x)" \
   chromium --no-sandbox --kiosk --single-process --ozone-platform=x11 \
-  --use-gl=swiftshader --enable-unsafe-swiftshader \
+  --use-gl=swiftshader --enable-unsafe-swiftshader $DSF_FLAG \
   --user-data-dir="$HOME/.olal-chrome2" "$URL" && exit 0
 
 echo "Nenhum navegador renderizou. Rode 'olal-doctor' para diagnosticar."
