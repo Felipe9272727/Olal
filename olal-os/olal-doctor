@@ -1,0 +1,69 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# ============================================================
+#  Olal OS - diagnostico. Diz EXATAMENTE onde a atualizacao para,
+#  sem adivinhacao. Rode no Termux:  bash ~/Olal/olal-os/olal-doctor
+# ============================================================
+SRC="$HOME/Olal"
+RAW="https://raw.githubusercontent.com/Felipe9272727/Olal/main/olal-os/shell/index.html"
+ok(){ printf '  \033[32mOK\033[0m  %s\n' "$1"; }
+bad(){ printf '  \033[31mXX\033[0m  %s\n' "$1"; }
+hr(){ printf '\n\033[1m== %s ==\033[0m\n' "$1"; }
+
+hr "1) Clone do Olal no Termux ($SRC)"
+if [ -d "$SRC/.git" ]; then
+  ok "repositorio encontrado"
+  echo "     commit local: $(cd "$SRC" && git log -1 --format='%h %s' 2>/dev/null)"
+  v=$(grep -o 'OLAL_BUILD = "[^"]*"' "$SRC/olal-os/shell/index.html" 2>/dev/null)
+  [ -n "$v" ] && ok "versao no clone: $v" || bad "sem OLAL_BUILD no clone (clone velho? rode: git reset --hard origin/main)"
+  grep -q 'App Store' "$SRC/olal-os/shell/index.html" 2>/dev/null && ok "App Store presente no clone" || bad "App Store AUSENTE no clone"
+else
+  bad "nao achei o repo em $SRC (rode o install)"
+fi
+
+hr "2) Rede ate o GitHub"
+if timeout 15 git -C "$SRC" ls-remote origin -h refs/heads/main >/dev/null 2>&1; then
+  ok "git alcanca o GitHub (origin/main: $(git -C "$SRC" rev-parse --short origin/main 2>/dev/null))"
+else
+  bad "git NAO alcanca o GitHub -> VPN/rede. Desligue a VPN."
+fi
+if timeout 15 curl -fsSL "$RAW" -o /dev/null 2>/dev/null; then
+  ok "curl alcanca raw.githubusercontent.com (auto-update da interface funciona)"
+else
+  bad "curl NAO alcanca raw.githubusercontent.com -> VPN/filtro bloqueando o raw"
+fi
+
+hr "3) Onde o Debian esta instalado (rootfs)"
+FOUND=0
+for RD in \
+  "$PREFIX/var/lib/proot-distro/installed-rootfs/debian" \
+  "$HOME/.proot-distro/installed-rootfs/debian" \
+  /data/data/com.termux/files/usr/var/lib/proot-distro/installed-rootfs/debian; do
+  if [ -d "$RD" ]; then
+    FOUND=1; ok "rootfs: $RD"
+    if [ -f "$RD/opt/olal/shell/index.html" ]; then
+      iv=$(grep -o 'OLAL_BUILD = "[^"]*"' "$RD/opt/olal/shell/index.html" 2>/dev/null)
+      [ -n "$iv" ] && ok "    versao INSTALADA no Debian: $iv" || bad "    Debian tem index.html mas SEM build stamp (versao velha)"
+      grep -q 'App Store' "$RD/opt/olal/shell/index.html" 2>/dev/null && ok "    App Store presente no Debian" || bad "    App Store AUSENTE no Debian (codigo velho)"
+    else
+      bad "    sem /opt/olal/shell/index.html no Debian (interface nao instalada)"
+    fi
+    if [ -f "$RD/usr/local/bin/olal-shell" ]; then
+      grep -q 'AUTO-CURA' "$RD/usr/local/bin/olal-shell" 2>/dev/null && ok "    olal-shell tem auto-cura (novo)" || bad "    olal-shell e ANTIGO (sem auto-cura/cache-buster)"
+    else
+      bad "    sem /usr/local/bin/olal-shell no Debian"
+    fi
+  fi
+done
+[ "$FOUND" = 0 ] && bad "NENHUM rootfs Debian encontrado nos caminhos conhecidos!"
+
+hr "4) Backend da interface (se o Olal estiver aberto)"
+if timeout 4 curl -fsS "http://localhost:8080/api/sysinfo" >/dev/null 2>&1; then
+  ok "backend respondendo em localhost:8080"
+else
+  echo "  (backend nao esta no ar agora - normal se o Olal nao estiver aberto)"
+fi
+
+hr "Resumo"
+echo "  Se (1) e (2) estao OK mas (3) mostra versao velha no Debian, rode:"
+echo "      cd ~/Olal && git reset --hard origin/main && cd olal-os && ./olal"
+echo "  O ./olal instala por 3 caminhos; veja as linhas '>> Olal OS instalado dentro do Debian'."
