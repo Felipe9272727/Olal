@@ -105,8 +105,12 @@ GPU_ON=0; [ -f /tmp/olal-gpu ] && GPU_ON=1
 # detector de tela preta: captura a raiz do X e mede o brilho medio (0-255).
 # UI do Olal tem fundo/icones coloridos -> brilho alto; GPU quebrada -> ~0.
 HAVE_SHOT=0; command -v import >/dev/null && command -v convert >/dev/null && HAVE_SHOT=1
-[ "$HAVE_SHOT" = 0 ] && ( apt-get install -y imagemagick >/dev/null 2>&1 \
-  || sudo apt-get install -y imagemagick >/dev/null 2>&1 ) &
+# Detector = rede de seguranca dos tiers de GPU. NAO travamos o boot por ele:
+# os tiers de SOFTWARE (WebKit sw / Firefox sw) renderizam de forma confiavel
+# SEM detector. Entao instala em 2o plano (pro proximo boot ligar os tiers de
+# GPU) e este boot ja mostra a UI pelo caminho software garantido.
+[ "$HAVE_SHOT" = 0 ] && ( apt-get install -y --no-install-recommends imagemagick >/dev/null 2>&1 \
+  || sudo apt-get install -y --no-install-recommends imagemagick >/dev/null 2>&1 ) &
 screen_bright(){ import -window root -silent /tmp/olal-probe.png 2>/dev/null \
   && convert /tmp/olal-probe.png -colorspace Gray -resize 1x1 -format '%[fx:int(mean*255)]' info: 2>/dev/null; }
 
