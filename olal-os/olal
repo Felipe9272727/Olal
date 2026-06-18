@@ -27,6 +27,20 @@ cp -rf "$SRC/olal-os/shell"           "$DEPLOY/shell"      2>/dev/null
 cp -f  "$SRC/olal-os/desktop/olal-shell" "$DEPLOY/olal-shell" 2>/dev/null
 grep -o 'OLAL_BUILD = "[^"]*"' "$DEPLOY/shell/index.html" 2>/dev/null \
   | sed 's/OLAL_BUILD = />> Versao que vai ser instalada: /'
+# cinto-e-suspensorio: tambem tenta copiar direto pro rootfs (varios caminhos
+# possiveis do proot-distro). Se um bater, ja atualiza; senao, o /tmp resolve.
+for RD in \
+  "$PREFIX/var/lib/proot-distro/installed-rootfs/debian" \
+  "$HOME/.proot-distro/installed-rootfs/debian" \
+  /data/data/com.termux/files/usr/var/lib/proot-distro/installed-rootfs/debian; do
+  if [ -d "$RD" ]; then
+    mkdir -p "$RD/opt/olal/shell" 2>/dev/null
+    cp -rf "$DEPLOY/shell/." "$RD/opt/olal/shell/" 2>/dev/null \
+      && cp -f "$DEPLOY/olal-shell" "$RD/usr/local/bin/olal-shell" 2>/dev/null \
+      && chmod +x "$RD/usr/local/bin/olal-shell" 2>/dev/null \
+      && echo ">> (copia direta ok em $RD)"
+  fi
+done
 
 # 1) audio (PulseAudio sobre TCP -> YouTube com som)
 pulseaudio --start \
