@@ -3,6 +3,9 @@
 #  Olal OS - interface do sistema (a "cara" do OS) em tela cheia.
 #  Sobe o backend (terminal/arquivos/sistema reais) e abre a
 #  interface no 1o navegador que RENDERIZAR (firefox -> chromium).
+#  Em conjunto com o openbox (rc.xml) e o tint2, o navegador do
+#  Olal abre MAXIMIZADO, SEM decoracao - apps baixados ficam
+#  "por cima" dele e o botao "Olal" da barra traz ele de volta.
 # ============================================================
 # auto-atualiza a interface do GitHub (best-effort; nao trava se offline/VPN)
 mkdir -p /opt/olal/shell
@@ -56,6 +59,11 @@ user_pref("browser.newtabpage.enabled", false);
 user_pref("toolkit.telemetry.enabled", false);
 user_pref("datareporting.healthreport.uploadEnabled", false);
 user_pref("network.prefetch-next", false);
+/* PERF novo:GPU/Vulkan */
+user_pref("gfx.webrender.all", true);                /* WebRender sempre (mais rapido em Adreno via zink) */
+user_pref("gfx.webrender.compositor", true);
+user_pref("dom.ipc.plugins.asyncInit", true);
+user_pref("dom.ipc.processPrelaunch.enabled", false);
 JS
 
 # ============================================================
@@ -63,29 +71,45 @@ JS
 #  rede de seguranca: se a tela ficar PRETA (GPU falhou), cai sozinho
 #  pro Firefox por software (o caminho garantido). Assim da pra usar a
 #  GPU real sem risco de travar numa tela preta.
+#
+#  NOVO: em vez de --kiosk (que some com a barra do Olal), usamos
+#  --window-size + wmctrl pra abrir MAXIMIZADO, SEM decoracao. A barra
+#  do Olal (tint2) fica visivel no topo - apps baixados abrem "por cima"
+#  e o usuario volta pro Olal pelo botao na barra.
 # ============================================================
 export DISPLAY="${DISPLAY:-:0}"
 export MOZ_FAKE_NO_SANDBOX=1 MOZ_DISABLE_RDD_SANDBOX=1
-# o boot (olal) cria /tmp/olal-gpu quando o virgl acelerado por zink/Turnip
-# sobe. Sem esse flag, NAO arriscamos os navegadores por GPU: vamos direto
-# pro Firefox software (sem atrasos), exatamente como antes.
 GPU_ON=0; [ -f /tmp/olal-gpu ] && GPU_ON=1
 
 # detector de tela preta: captura a raiz do X e mede o brilho medio (0-255).
 # UI do Olal tem fundo/icones coloridos -> brilho alto; GPU quebrada -> ~0.
 HAVE_SHOT=0; command -v import >/dev/null && command -v convert >/dev/null && HAVE_SHOT=1
-# sem o detector NAO da pra arriscar a GPU (tela preta nao seria detectada);
-# instala em segundo plano pro proximo boot e, por enquanto, usa o Firefox.
 [ "$HAVE_SHOT" = 0 ] && ( apt-get install -y imagemagick >/dev/null 2>&1 \
   || sudo apt-get install -y imagemagick >/dev/null 2>&1 ) &
 screen_bright(){ import -window root -silent /tmp/olal-probe.png 2>/dev/null \
   && convert /tmp/olal-probe.png -colorspace Gray -resize 1x1 -format '%[fx:int(mean*255)]' info: 2>/dev/null; }
+
+# maximiza + remove decoracao da janela via wmctrl (compativel com qualquer WM).
+# espera a janela aparecer (ateh 12s) e ajusta. Idempotente.
+maximize_no_decor(){ local w=""; local t=0
+  while [ $t -lt 12 ]; do
+    w=$(wmctrl -l 2>/dev/null | tail -1 | awk '{print $1}')
+    [ -n "$w" ] && break
+    sleep 1; t=$((t+1))
+  done
+  [ -n "$w" ] || return 1
+  wmctrl -ir "$w" -b add,maximized_vert,maximized_horz 2>/dev/null
+  wmctrl -ir "$w" -b add,fullscreen 2>/dev/null   # fullscreen SEM cobrir a barra do Olal
+  wmctrl -ir "$w" -b remove,decorated 2>/dev/null
+}
 
 # roda um navegador e confirma que RENDEROU (processo vivo + tela nao-preta).
 # $1 = rotulo; resto = comando. Retorna 0 e segura o processo se renderizou.
 run_browser(){ local label="$1"; shift
   echo ">> tentando: $label"
   "$@" >/dev/null 2>&1 & local pid=$!
+  # dispara a maximizacao em paralelo (nao bloqueia o detector de tela preta)
+  ( sleep 2; maximize_no_decor ) &
   local t=0 ok=0
   while [ $t -lt 12 ]; do sleep 1; t=$((t+1))
     kill -0 "$pid" 2>/dev/null || { echo "   ($label caiu)"; return 1; }
@@ -94,7 +118,6 @@ run_browser(){ local label="$1"; shift
       if [ -n "$b" ] && [ "$b" -gt 10 ] 2>/dev/null; then ok=1; break; fi
     fi
   done
-  # sem ferramenta de screenshot: confia no "vivo apos 8s" (comportamento antigo)
   [ "$HAVE_SHOT" = 1 ] || { kill -0 "$pid" 2>/dev/null && ok=1; }
   if [ "$ok" = 1 ]; then echo ">> Olal OS rodando ($label, render OK)."; wait "$pid"; return 0; fi
   echo "   ($label nao renderizou - tela preta? proximo...)"
@@ -106,34 +129,39 @@ ICD="/usr/share/vulkan/icd.d/freedreno_icd.${ARCH}.json"
 mkdir -p "$HOME/.cache/olal-shader"
 GPU_ENV=(MESA_LOADER_DRIVER_OVERRIDE=zink TU_DEBUG=noconform vblank_mode=0
   MESA_SHADER_CACHE_DISABLE=false "MESA_SHADER_CACHE_DIR=$HOME/.cache/olal-shader"
+  "MESA_GLSL_CACHE_DIR=$HOME/.cache/olal-shader"
   MESA_GL_VERSION_OVERRIDE=4.3COMPAT MESA_GLES_VERSION_OVERRIDE=3.2 MESA_NO_ERROR=1)
 [ -f "$ICD" ] && GPU_ENV+=("VK_ICD_FILENAMES=$ICD")
 
 # 1) CHROMIUM acelerado por GPU (Turnip/zink) - o caminho RAPIDO de verdade.
-#    So tenta se o detector de tela preta existe (senao seria arriscado).
+#    Modo "app" (nao kiosk): abre em janela normal, depois maximiza/remove decor.
+#    Assim a barra do Olal (tint2) continua visivel no topo.
 if [ "$GPU_ON" = 1 ] && [ "$HAVE_SHOT" = 1 ] && command -v chromium >/dev/null; then
   run_browser "Chromium GPU (Turnip/zink)" env "${GPU_ENV[@]}" \
-    chromium --no-sandbox --kiosk --ozone-platform=x11 --enable-features=UseOzonePlatform,VaapiVideoDecoder \
+    chromium --no-sandbox --ozone-platform=x11 --enable-features=UseOzonePlatform,VaapiVideoDecoder \
     --use-gl=egl --ignore-gpu-blocklist --enable-gpu-rasterization --enable-zero-copy \
     --canvas-oop-rasterization --autoplay-policy=no-user-gesture-required \
     --disable-background-timer-throttling --no-first-run --disable-sync --disable-translate \
-    --disable-extensions --disable-component-update --user-data-dir="$HOME/.olal-chrome" "$URL" && exit 0
+    --disable-extensions --disable-component-update --start-maximized \
+    --user-data-dir="$HOME/.olal-chrome" "$URL" && exit 0
 fi
 # 2) FIREFOX com WebRender por GPU (usa o virgl acelerado por zink/Turnip).
-#    So se houver detector (cai sozinho pro software se a GPU der tela preta).
-FF=""; command -v firefox-esr >/dev/null && FF=firefox-esr || { command -v firefox >/dev/null && FF=firefox; }
-if [ -n "$FF" ] && [ "$GPU_ON" = 1 ] && [ "$HAVE_SHOT" = 1 ]; then
-  run_browser "Firefox GPU (WebRender/virgl)" \
-    env MOZ_WEBRENDER=1 MOZ_X11_EGL=1 MOZ_ACCELERATED=1 LIBGL_ALWAYS_SOFTWARE=0 \
-    "$FF" --kiosk --profile "$PROF" --no-remote "$URL" && exit 0
+if [ "$GPU_ON" = 1 ] && [ "$HAVE_SHOT" = 1 ]; then
+  FF=""; command -v firefox-esr >/dev/null && FF=firefox-esr || { command -v firefox >/dev/null && FF=firefox; }
+  if [ -n "$FF" ]; then
+    run_browser "Firefox GPU (WebRender/virgl)" \
+      env MOZ_WEBRENDER=1 MOZ_X11_EGL=1 MOZ_ACCELERATED=1 LIBGL_ALWAYS_SOFTWARE=0 \
+      "$FF" --profile "$PROF" --no-remote "$URL" && exit 0
+  fi
 fi
 # 3) FIREFOX por software - o caminho GARANTIDO (identico ao que ja funcionava)
+FF=""; command -v firefox-esr >/dev/null && FF=firefox-esr || { command -v firefox >/dev/null && FF=firefox; }
 [ -n "$FF" ] && run_browser "Firefox (software)" \
-  "$FF" --kiosk --profile "$PROF" --no-remote "$URL" && exit 0
+  "$FF" --profile "$PROF" --no-remote "$URL" && exit 0
 # 4) CHROMIUM swiftshader em processo unico (ultimo recurso)
 command -v chromium >/dev/null && run_browser "Chromium swiftshader" \
-  chromium --no-sandbox --kiosk --single-process --ozone-platform=x11 \
-  --use-gl=swiftshader --enable-unsafe-swiftshader \
+  chromium --no-sandbox --single-process --ozone-platform=x11 \
+  --use-gl=swiftshader --enable-unsafe-swiftshader --start-maximized \
   --user-data-dir="$HOME/.olal-chrome2" "$URL" && exit 0
 
 echo "Nenhum navegador renderizou. Rode 'olal-doctor' para diagnosticar."
