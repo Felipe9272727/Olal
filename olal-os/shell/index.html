@@ -163,6 +163,15 @@ const APPS = [
   {n:"YouTube", c:"#FF0000", i:"YT", f:appYT},
 ];
 
+/* auto-ajuste de proporcao: se a tela estiver larga (desktop/Chromium sem o
+   pref), escala a interface pra ficar com proporcao de celular */
+(function olalFit(){
+  function apply(){ const target=440;
+    if(window.innerWidth>560){ document.documentElement.style.zoom=(window.innerWidth/target).toFixed(3); }
+    else { document.documentElement.style.zoom=""; } }
+  window.addEventListener("resize",apply); apply();
+})();
+
 const grid=document.getElementById("grid");
 APPS.forEach((a,idx)=>{
   const el=document.createElement("div"); el.className="app";
@@ -189,8 +198,9 @@ const aiChat=document.getElementById("aichat");
 function aiBubble(role,txt){ const d=document.createElement("div");
   d.className="msg "+(role==="user"?"u":"a"); d.textContent=txt; aiChat.appendChild(d);
   aiChat.scrollTop=aiChat.scrollHeight; return d; }
+let aiWelcomed=false;
 function aiOpen(prefill){ document.getElementById("aiover").classList.add("on");
-  if(!aiHist.length) aiBubble("a","Oi! Eu sou a Olal AI e comando este sistema. Posso conversar e tambem CONTROLAR a OS: peca 'toca lofi no youtube', 'abre a calculadora', 'pesquisa gatos'...");
+  if(!aiWelcomed){ aiWelcomed=true; aiBubble("a","Oi! Eu sou a Olal AI e comando este sistema. Posso conversar e tambem CONTROLAR a OS: peca 'toca lofi no youtube', 'abre a calculadora', 'pesquisa gatos'..."); }
   if(prefill){ document.getElementById("aimsg").value=prefill; aiSend(); }
   else document.getElementById("aimsg").focus(); }
 function aiClose(){ document.getElementById("aiover").classList.remove("on"); }
@@ -236,7 +246,7 @@ async function aiSend(){
   const b=aiBubble("a","…");
   try{ const resp=await aiAsk(aiHist); const clean=aiHandle(resp);
        b.textContent=clean; aiHist.push({role:"assistant",content:clean}); }
-  catch(e){ b.textContent="Estou aqui! (a IA online não respondeu agora) — mas posso controlar o sistema: tente \"abre a calculadora\" ou \"toca lofi\"."; }
+  catch(e){ b.textContent="A IA online não respondeu (sua rede/VPN pode estar bloqueando — tente DESLIGAR a VPN). Mesmo assim eu controlo o sistema: \"abre a calculadora\", \"toca lofi\", \"rode ls -la\", \"que horas são\"."; }
   aiChat.scrollTop=aiChat.scrollHeight;
 }
 document.getElementById("aisend").onclick=aiSend;
