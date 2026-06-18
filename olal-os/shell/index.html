@@ -438,6 +438,24 @@ async function aiSend(){
     aiHist.push({role:"assistant",content:"(comando executado)"}); aiChat.scrollTop=aiChat.scrollHeight; return; }
   const local=localIntent(t);
   if(local){ aiBubble("a",local); aiHist.push({role:"assistant",content:local}); return; }
+  // perguntas comuns do sistema respondidas LOCALMENTE (funcionam SEM internet/VPN)
+  if(SYS_OK){
+    const SQ=[
+      [/(mem[oó]ria|ram)/, "free -h | awk '/Mem:/{print $3\" usados de \"$2}'", "🧠 Memória:"],
+      [/(disco|armazenamento|espa[çc]o)/, "df -h \"$HOME\" | awk 'NR==2{print $3\" usados de \"$2\" (\"$5\")\"}'", "💾 Disco:"],
+      [/(meu ip|qual.*\bip\b|endere[çc]o ip)/, "hostname -I 2>/dev/null | awk '{print $1}'", "🌐 IP:"],
+      [/(quantos processos|processos rodando)/, "ps -e --no-headers | wc -l", "⚙️ Processos ativos:"],
+      [/(uptime|ligad|quanto tempo.*lig)/, "uptime -p", "⏱️"],
+      [/(que dia|data de hoje|qual.*data)/, "date '+%A, %d de %B de %Y'", "📅"],
+      [/(vers[ãa]o.*(sistema|os)|que sistema)/, "cat /etc/olal-release", "🦊"],
+      [/(qual.*kernel|vers[ãa]o.*kernel)/, "uname -r", "🐧 Kernel:"],
+    ];
+    for(const [re,cmd,lbl] of SQ){ if(re.test(t.toLowerCase())){
+      const bb=aiBubble("a",""); bb.innerHTML='<span class="spin"></span>';
+      try{ const r=await sysExec(cmd); bb.textContent=lbl+" "+((r.out||"").trim()||"?"); }
+      catch(e){ bb.textContent="não consegui consultar agora."; }
+      aiHist.push({role:"assistant",content:"(consulta de sistema)"}); aiChat.scrollTop=aiChat.scrollHeight; return; } }
+  }
   // OS REAL (com backend) -> AGENTE com controle total: raciocina + executa + observa
   if(SYS_OK){
     const b=aiBubble("a",""); b.innerHTML='<span class="spin"></span> pensando…'; const steps=[];
