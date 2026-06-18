@@ -50,8 +50,8 @@
   /* ---- tela de app (slide up) ---- */
   #view{ position:absolute; inset:0; display:flex; flex-direction:column; background:#080d18;
     transform:translateY(100%); opacity:0; visibility:hidden;
-    transition:transform .26s var(--ease), opacity .22s var(--ease), visibility .26s; z-index:40;
-    will-change:transform; contain:layout paint; }
+    transition:transform .22s var(--ease), opacity .18s var(--ease), visibility .22s; z-index:40;
+    contain:layout paint; }
   #view.on{ transform:translateY(0); opacity:1; visibility:visible; }
   #bar{ height:54px; flex:0 0 auto; display:flex; align-items:center; gap:12px; padding:0 12px;
     padding-top:env(safe-area-inset-top,0px); background:#0b1322; border-bottom:1px solid #1b2740; }
@@ -89,8 +89,8 @@
   #aibtn:active{ transform:scale(.85); }
   #aiover{ position:absolute; inset:0; z-index:60; display:flex; flex-direction:column;
     background:linear-gradient(180deg,#0a1220,#05080f);
-    transform:translateY(100%); visibility:hidden; will-change:transform; contain:layout paint;
-    transition:transform .28s var(--ease), visibility .28s; }
+    transform:translateY(100%); visibility:hidden; contain:layout paint;
+    transition:transform .22s var(--ease), visibility .22s; }
   #aiover.on{ transform:translateY(0); visibility:visible; }
   #aihead{ display:flex; align-items:center; gap:12px; padding:14px 18px;
     padding-top:calc(14px + env(safe-area-inset-top,0px)); border-bottom:1px solid #16223a; }
@@ -341,7 +341,7 @@ function aiHandle(resp){
 /* ===== ponte com o SISTEMA REAL (backend Olal) - faz o Olal ser um OS ===== */
 /* carimbo de versao: aparece embaixo da home. Se NAO mudar depois de atualizar,
    o update nao chegou na interface (VPN bloqueou o git ou cache do navegador). */
-const OLAL_BUILD = "2026-06-18 • otimizado v5";
+const OLAL_BUILD = "2026-06-18 • otimizado v6 (idle 0%)";
 window.addEventListener("load",()=>{ const e=document.getElementById("build"); if(e) e.textContent="Olal OS  ·  "+OLAL_BUILD; });
 
 const SYS_API = location.origin;
