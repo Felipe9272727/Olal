@@ -131,6 +131,11 @@
     animation:load 1.3s var(--ease) infinite; }
   @keyframes pulse{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.09); } }
   @keyframes load{ 0%{ transform:translateX(-120%); } 100%{ transform:translateX(420%); } }
+  /* dica de primeiro uso */
+  #hint{ position:absolute; left:14px; right:14px; bottom:90px; z-index:90; padding:14px 16px;
+    border-radius:16px; background:#12233dee; border:1px solid #2BD17A55; box-shadow:0 10px 30px #000a;
+    font-size:14px; line-height:1.5; transition:opacity .5s, transform .5s; }
+  #hint.gone{ opacity:0; transform:translateY(12px); pointer-events:none; }
   /* menu de energia */
   #power{ position:absolute; inset:0; z-index:70; display:none; align-items:center; justify-content:center;
     background:#04070ecc; }
@@ -182,6 +187,12 @@
     <div class="sub">Linux real, movido por IA</div>
     <div class="bar"><i></i></div>
   </div>
+
+  <!-- dica de primeiro uso (ensina o gesto de pinca pra ajustar o tamanho) -->
+  <div id="hint" class="gone" onclick="hideHint()">
+    🤏 Aperte com <b>2 dedos</b> pra ajustar o tamanho da tela • toque no <b>🤖</b> pra falar com a IA
+    <div style="margin-top:8px;font-size:12px;opacity:.7">(toque pra fechar)</div>
+  </div>
 </div>
 
 <script>
@@ -200,11 +211,32 @@ abre a wikipedia dos gatos -> @@ACT {"app":"navegador","query":"https://pt.wikip
 abre a calculadora -> @@ACT {"app":"calc"}
 Se for so conversa, NAO inclua @@ACT.`;
 
-async function aiLLM(prompt){
-  const url="https://text.pollinations.ai/"+encodeURIComponent(prompt)+"?model=openai";
-  const ac=new AbortController(); const tm=setTimeout(()=>ac.abort(),22000);
-  try{ const r=await fetch(url,{signal:ac.signal}); if(!r.ok) throw new Error("status "+r.status); return (await r.text()).trim(); }
+/* tenta varios provedores de LLM (sem chave). Se a VPN bloquear um, tenta o
+   proximo; por ultimo tenta pelo BACKEND (fetch no servidor, caminho de rede
+   diferente do navegador - as vezes passa onde o navegador e barrado). */
+async function _fetchTxt(url,opt,ms){
+  const ac=new AbortController(); const tm=setTimeout(()=>ac.abort(),ms||20000);
+  try{ const r=await fetch(url,Object.assign({signal:ac.signal},opt||{}));
+    if(!r.ok) throw new Error("status "+r.status); const t=(await r.text()).trim();
+    if(!t) throw new Error("vazio"); return t; }
   finally{ clearTimeout(tm); }
+}
+async function aiLLM(prompt){
+  const enc=encodeURIComponent(prompt); let lastErr;
+  const tries=[
+    ()=>_fetchTxt("https://text.pollinations.ai/"+enc+"?model=openai"),
+    ()=>_fetchTxt("https://text.pollinations.ai/"+enc),
+    ()=>_fetchTxt("https://text.pollinations.ai/openai",{method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({model:"openai",messages:[{role:"user",content:prompt}]})})
+        .then(t=>{ try{const j=JSON.parse(t); return (j.choices?.[0]?.message?.content||t).trim();}catch(e){return t;} }),
+  ];
+  // ultimo recurso: proxy pelo backend do proprio Olal OS (so quando ha sistema)
+  if(SYS_OK) tries.push(()=>_fetchTxt(SYS_API+"/api/ai",{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify({prompt})},25000)
+      .then(t=>{ try{const j=JSON.parse(t); return (j.text||t).trim();}catch(e){return t;} }));
+  for(const fn of tries){ try{ return await fn(); }catch(e){ lastErr=e; } }
+  throw lastErr||new Error("sem resposta");
 }
 async function aiAsk(history){
   const turns = history.slice(-6).map(m=>(m.role==="user"?"Usuario":"Olal")+": "+m.content).join("\n");
@@ -281,6 +313,19 @@ if(location.protocol.startsWith("http"))
   fetch(SYS_API+"/api/sysinfo").then(r=>r.ok&&(SYS_OK=true)).catch(()=>{});
 /* tela de boot: some quando a interface esta pronta */
 window.addEventListener("load",()=>setTimeout(()=>document.getElementById("boot").classList.add("gone"),1600));
+
+/* dica de primeiro uso: ensina o gesto de pinca pra ajustar o tamanho.
+   aparece uma vez (depois do boot) e some sozinha em ~7s. */
+let _hintT=0;
+function hideHint(){ const h=document.getElementById("hint"); if(h){ h.classList.add("gone"); } clearTimeout(_hintT); }
+function showHint(){
+  if(localStorage.getItem("olal_hint")==="1") return;
+  const h=document.getElementById("hint"); if(!h) return;
+  h.classList.remove("gone");
+  localStorage.setItem("olal_hint","1");
+  _hintT=setTimeout(hideHint,7000);
+}
+window.addEventListener("load",()=>setTimeout(showHint,2600));
 
 /* ===== mesma lista/cores dos apps do nosso OS ===== */
 const APPS = [

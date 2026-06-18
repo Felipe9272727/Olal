@@ -4,6 +4,7 @@ Serve a interface E expõe o sistema real para ela (terminal, arquivos,
 informações, controle). É o que faz o Olal ser um OS, não um launcher:
 os apps falam com o Debian de verdade por baixo."""
 import http.server, socketserver, subprocess, json, os, pwd, shutil, urllib.parse, sys
+import urllib.request
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PORT = int(os.environ.get("OLAL_PORT", "8080"))
@@ -62,6 +63,17 @@ def launch(exe):
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
+def ai_proxy(prompt):
+    """Fala com a LLM (sem chave) pelo SERVIDOR. Caminho de rede diferente do
+    navegador - as vezes passa onde o navegador e barrado por CORS/UA."""
+    try:
+        url = "https://text.pollinations.ai/" + urllib.parse.quote(prompt, safe="") + "?model=openai"
+        req = urllib.request.Request(url, headers={"User-Agent": "OlalOS/1.0"})
+        with urllib.request.urlopen(req, timeout=22) as r:
+            return {"text": r.read().decode("utf-8", "ignore").strip()}
+    except Exception as e:
+        return {"text": "", "error": str(e)}
+
 def listdir(path):
     path = os.path.abspath(os.path.expanduser(path or HOME))
     try:
@@ -98,6 +110,7 @@ class H(http.server.SimpleHTTPRequestHandler):
         try: data = json.loads(body or b"{}")
         except: data = {}
         u = urllib.parse.urlparse(self.path)
+        if u.path == "/api/ai":     return self._json(ai_proxy(data.get("prompt","")))
         if u.path == "/api/exec":   return self._json(run(data.get("cmd",""), data.get("cwd")))
         if u.path == "/api/launch": return self._json(launch(data.get("exec","")))
         if u.path == "/api/power":
