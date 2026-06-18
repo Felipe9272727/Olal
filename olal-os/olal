@@ -8,7 +8,11 @@
 # 0) AUTO-ATUALIZA tudo do GitHub (best-effort; nunca trava o boot)
 ( SRC="$HOME/Olal"; DEB="$PREFIX/var/lib/proot-distro/installed-rootfs/debian"
   if [ -d "$SRC/.git" ]; then
-    ( cd "$SRC" && timeout 25 git pull --ff-only >/dev/null 2>&1 ) || true
+    # reset --hard garante a versao mais nova mesmo com arvore suja / sem fast-forward
+    ( cd "$SRC" && timeout 30 git fetch origin main >/dev/null 2>&1 \
+        && git reset --hard origin/main >/dev/null 2>&1 ) \
+      || ( cd "$SRC" && timeout 25 git pull >/dev/null 2>&1 ) || true
+    mkdir -p "$DEB/opt/olal/shell"
     cp -rf "$SRC/olal-os/shell/." "$DEB/opt/olal/shell/" 2>/dev/null
     cp -f  "$SRC/olal-os/desktop/olal-shell" "$DEB/usr/local/bin/olal-shell" 2>/dev/null
     chmod +x "$DEB/usr/local/bin/olal-shell" 2>/dev/null
