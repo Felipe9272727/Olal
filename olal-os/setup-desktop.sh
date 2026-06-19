@@ -67,6 +67,7 @@ cp olal-src/olal-os/desktop/icon.png      /opt/olal/icon.png      2>/dev/null ||
 cp olal-src/olal-os/desktop/*.desktop /usr/share/applications/ 2>/dev/null || true
 install -m755 olal-src/olal-os/desktop/olal-shell  /usr/local/bin/olal-shell  2>/dev/null || true
 install -m755 olal-src/olal-os/desktop/olal-webkit /usr/local/bin/olal-webkit 2>/dev/null || true
+install -m755 olal-src/olal-os/desktop/olal-gpu-boost /usr/local/bin/olal-gpu-boost 2>/dev/null || true
 
 # ---------- CONFIGURACOES DO WM E DA BARRA (integracao de apps) ----------
 mkdir -p /etc/olal /root/.config/openbox /root/.config/tint2
