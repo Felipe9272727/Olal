@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# ============================================================
+#  Olal OS - GPU BOOST (estilo Winlator/GameHub).
+#  Instala o Mesa "kgsl" do lfdevs/mesa-for-android-container, que da
+#  aceleracao por GPU REAL da Adreno DENTRO do proot (Freedreno faz OpenGL
+#  direto, sem o overhead do zink; Turnip pro Vulkan), igual o Winlator faz.
+#
+#  SEGURO: instala numa pasta ISOLADA (/opt/olal/mesa-kgsl) e so o tier de
+#  GPU do Olal usa. NAO toca no Mesa do sistema -> o caminho por software
+#  (que sempre funciona) continua intacto. Pra desligar: olal-gpu-boost off.
+# ============================================================
+set -u
+PREFIX_DIR="/opt/olal/mesa-kgsl"
+FLAG="/etc/olal/gpu-kgsl.env"
+REPO="lfdevs/mesa-for-android-container"
+
+[ "${1:-}" = "off" ] && { rm -rf "$PREFIX_DIR" "$FLAG"; echo ">> GPU boost DESLIGADO (volta pro caminho normal)."; exit 0; }
+
+command -v curl >/dev/null || { echo "precisa do curl"; exit 1; }
+command -v tar  >/dev/null || { echo "precisa do tar"; exit 1; }
+
+# 1) arch + codename do Debian
+A="$(uname -m)"; case "$A" in aarch64|arm64) ARCH=arm64;; *) echo "GPU boost so em arm64 (Adreno)"; exit 1;; esac
+DV="$(cat /etc/debian_version 2>/dev/null || echo '')"
+case "$DV" in
+  13*|trixie*) CODE=trixie;; 12*|bookworm*) CODE=bookworm;; 11*|bullseye*) CODE=bullseye;;
+  *) CODE="$(. /etc/os-release 2>/dev/null; echo "${VERSION_CODENAME:-trixie}")";;
+esac
+echo ">> Debian $DV ($CODE), arch $ARCH. Procurando driver Adreno (kgsl)..."
+
+# 2) acha o asset do release que casa com o codename + arm64 (tenta debian; cai
+#    pra ubuntu noble como compativel se nao houver debian do codename)
+API="https://api.github.com/repos/$REPO/releases/latest"
+JSON="$(curl -fsSL "$API" 2>/dev/null)" || { echo "!! sem rede pro GitHub (VPN?)"; exit 1; }
+pick(){ printf '%s' "$JSON" | grep -o '"browser_download_url": *"[^"]*"' | sed 's/.*"\(http[^"]*\)"/\1/' | grep -i "$1" | head -1; }
+URL="$(pick "debian_${CODE}_${ARCH}")"
+[ -z "$URL" ] && URL="$(pick "debian_.*_${ARCH}")"
+[ -z "$URL" ] && URL="$(pick "ubuntu_.*_${ARCH}")"
+[ -z "$URL" ] && URL="$(pick "_${ARCH}")"
+[ -z "$URL" ] && { echo "!! nenhum driver compativel no release. Veja: https://github.com/$REPO/releases"; exit 1; }
+echo ">> baixando: $URL"
+
+# 3) baixa e extrai numa pasta ISOLADA (nao mexe no sistema)
+TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+curl -fL# "$URL" -o "$TMP/mesa.tar" || { echo "!! falha no download"; exit 1; }
+rm -rf "$PREFIX_DIR"; mkdir -p "$PREFIX_DIR"
+tar -xf "$TMP/mesa.tar" -C "$PREFIX_DIR" 2>/dev/null || { echo "!! falha ao extrair"; exit 1; }
+
+# 4) localiza as libs/icd dentro da pasta isolada
+LIBDIR="$(dirname "$(find "$PREFIX_DIR" -name 'libgallium*' -o -name 'kgsl_dri.so' 2>/dev/null | head -1)" 2>/dev/null)"
+DRIDIR="$(dirname "$(find "$PREFIX_DIR" -path '*/dri/*' -name '*.so' 2>/dev/null | head -1)" 2>/dev/null)"
+ICD="$(find "$PREFIX_DIR" -name 'freedreno_icd*.json' 2>/dev/null | head -1)"
+[ -z "$LIBDIR" ] && LIBDIR="$(dirname "$(find "$PREFIX_DIR" -name 'libEGL*' 2>/dev/null | head -1)" 2>/dev/null)"
+[ -z "$DRIDIR" ] && DRIDIR="$LIBDIR"
+if [ -z "$LIBDIR" ]; then echo "!! nao achei as libs no pacote"; rm -rf "$PREFIX_DIR"; exit 1; fi
+
+# 5) grava o env que o olal-shell usa SO no tier de GPU (isolado do sistema)
+mkdir -p /etc/olal
+{
+  echo "KGSL_LD=\"$LIBDIR\""
+  echo "KGSL_DRI=\"$DRIDIR\""
+  echo "KGSL_ICD=\"${ICD:-}\""
+} > "$FLAG"
+echo ""
+echo ">> GPU boost LIGADO (driver kgsl em $PREFIX_DIR, isolado)."
+echo "   Reinicie o Olal:  ./olal   (o tier de GPU vai usar a Adreno direto)."
+echo "   Se algo ficar estranho, desligue com:  olal-gpu-boost off"

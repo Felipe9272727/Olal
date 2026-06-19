@@ -41,6 +41,11 @@ WKURL="https://raw.githubusercontent.com/Felipe9272727/Olal/main/olal-os/desktop
 if timeout 12 curl -fsSL "$WKURL" -o "/usr/local/bin/olal-webkit.new" 2>/dev/null && [ -s "/usr/local/bin/olal-webkit.new" ]; then
   mv "/usr/local/bin/olal-webkit.new" "/usr/local/bin/olal-webkit"; chmod +x /usr/local/bin/olal-webkit
 else rm -f "/usr/local/bin/olal-webkit.new"; fi
+# AUTO-CURA do olal-gpu-boost
+GBURL="https://raw.githubusercontent.com/Felipe9272727/Olal/main/olal-os/desktop/olal-gpu-boost"
+if timeout 12 curl -fsSL "$GBURL" -o "/usr/local/bin/olal-gpu-boost.new" 2>/dev/null && [ -s "/usr/local/bin/olal-gpu-boost.new" ]; then
+  mv "/usr/local/bin/olal-gpu-boost.new" "/usr/local/bin/olal-gpu-boost"; chmod +x /usr/local/bin/olal-gpu-boost
+else rm -f "/usr/local/bin/olal-gpu-boost.new"; fi
 grep -o 'OLAL_BUILD = "[^"]*"' /opt/olal/shell/index.html 2>/dev/null | sed 's/OLAL_BUILD = />> versao da interface: /'
 pkill -f "olal/shell/backend.py" 2>/dev/null
 ( cd /opt/olal/shell && OLAL_PORT=8080 python3 backend.py >/dev/null 2>&1 & )
@@ -138,14 +143,29 @@ run_browser(){ local label="$1"; shift
   echo "   ($label nao renderizou - tela preta? proximo...)"
   kill "$pid" 2>/dev/null; pkill -P "$pid" 2>/dev/null; sleep 1; return 1; }
 
-# ---- env de GPU: Turnip (Vulkan da Adreno) via zink, acesso direto ao KGSL ----
+# ---- env de GPU: aprendido do Winlator/GameHub. Se o usuario instalou o
+#      "GPU boost" (driver kgsl do lfdevs/mesa-for-android-container, igual o
+#      Winlator usa), usa Freedreno/kgsl DIRETO na Adreno (sem overhead do zink).
+#      Senao, zink. Mais: mesa_glthread (GL em thread = +CPU), present mode
+#      mailbox (sem stall/tearing) e shader cache. So afeta o caminho de GPU.
 ARCH="$(uname -m)"
 ICD="/usr/share/vulkan/icd.d/freedreno_icd.${ARCH}.json"
 mkdir -p "$HOME/.cache/olal-shader"
-GPU_ENV=(MESA_LOADER_DRIVER_OVERRIDE=zink TU_DEBUG=noconform vblank_mode=0
+GLDRV=zink
+GPU_ENV=(TU_DEBUG=noconform vblank_mode=0
+  mesa_glthread=true MESA_VK_WSI_PRESENT_MODE=mailbox ZINK_DESCRIPTORS=lazy
   MESA_SHADER_CACHE_DISABLE=false "MESA_SHADER_CACHE_DIR=$HOME/.cache/olal-shader"
   "MESA_GLSL_CACHE_DIR=$HOME/.cache/olal-shader"
   MESA_GL_VERSION_OVERRIDE=4.3COMPAT MESA_GLES_VERSION_OVERRIDE=3.2 MESA_NO_ERROR=1)
+# GPU BOOST (lfdevs/mesa-kgsl, isolado): GL direto na Adreno via Freedreno/kgsl.
+if [ -f /etc/olal/gpu-kgsl.env ]; then
+  # shellcheck disable=SC1091
+  . /etc/olal/gpu-kgsl.env
+  GLDRV=kgsl
+  GPU_ENV+=("LD_LIBRARY_PATH=${KGSL_LD}:${LD_LIBRARY_PATH:-}" "LIBGL_DRIVERS_PATH=${KGSL_DRI}")
+  [ -n "${KGSL_ICD:-}" ] && ICD="$KGSL_ICD"
+fi
+GPU_ENV+=("MESA_LOADER_DRIVER_OVERRIDE=$GLDRV")
 [ -f "$ICD" ] && GPU_ENV+=("VK_ICD_FILENAMES=$ICD")
 
 # ---- RENDER SCALE: rasteriza em menos pixels (a CPU/GPU desenha menos) e o
