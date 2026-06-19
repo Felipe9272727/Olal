@@ -373,7 +373,7 @@ function aiHandle(resp){
 /* ===== ponte com o SISTEMA REAL (backend Olal) - faz o Olal ser um OS ===== */
 /* carimbo de versao: aparece embaixo da home. Se NAO mudar depois de atualizar,
    o update nao chegou na interface (VPN bloqueou o git ou cache do navegador). */
-const OLAL_BUILD = "2026-06-19 • nativo + GPU boost (Winlator) v11";
+const OLAL_BUILD = "2026-06-19 • espera backend + nativo v11.1";
 window.addEventListener("load",()=>{ const e=document.getElementById("build"); if(e) e.textContent="Olal OS  ·  "+OLAL_BUILD; });
 
 const SYS_API = location.origin;
