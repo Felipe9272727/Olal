@@ -64,6 +64,23 @@ rm -rf "$HOME/.olal-ff/cache2" "$HOME/.cache/mozilla" 2>/dev/null
 # cache-buster: forca o Firefox a carregar a versao nova (nunca do cache)
 URL="http://localhost:8080/index.html?v=$(date +%s)"
 
+# ============================================================
+#  CAUSA REAL DE TELA PRETA (achada testando o script de verdade):
+#  o menu Desligar (e crashes) mata o Firefox com kill -9, que deixa o
+#  LOCK do perfil (~/.olal-ff/lock e .parentlock) apontando pra um
+#  processo morto. No boot seguinte, o Firefox com --no-remote ve o
+#  perfil "em uso" e SAI NA HORA -> a cascata desce ate o swiftshader,
+#  que em arm64 e tela preta. Correcao: e boot de kiosk - mata sobras
+#  de sessao anterior e remove os locks orfaos ANTES de abrir qualquer
+#  navegador. Idem pro SingletonLock do Chromium.
+# ============================================================
+pkill -9 -f "firefox-esr.*olal-ff" 2>/dev/null; pkill -9 -f "olal-webkit" 2>/dev/null
+pkill -9 -f "chromium.*olal-chrome" 2>/dev/null
+sleep 0.5
+rm -f "$HOME/.olal-ff/lock" "$HOME/.olal-ff/.parentlock" 2>/dev/null
+rm -f "$HOME/.olal-chrome/SingletonLock" "$HOME/.olal-chrome/SingletonSocket" "$HOME/.olal-chrome/SingletonCookie" 2>/dev/null
+rm -f "$HOME/.olal-chrome2/SingletonLock" "$HOME/.olal-chrome2/SingletonSocket" "$HOME/.olal-chrome2/SingletonCookie" 2>/dev/null
+
 # perfil do Firefox: vai DIRETO pra interface, sem telas de boas-vindas/dialogs
 PROF="$HOME/.olal-ff"; mkdir -p "$PROF"
 cat > "$PROF/user.js" <<'JS'
@@ -216,10 +233,12 @@ if [ -x "$WK" ] && have_webkit; then
     run_browser "Olal nativo (WebKit GPU)" env "${GPU_ENV[@]}" OLAL_WK_GPU=1 \
       python3 "$WK" "$URL" && exit 0
   fi
-  # 0b) shell nativo por software (CONFIAVEL - exatamente a config testada que
-  #     renderiza: compositing desligado + GL por software = sem GPU = sem tela
-  #     preta. E o caminho preferido pra UI nativa.)
-  run_browser "Olal nativo (WebKit)" env WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1 \
+  # 0b) shell nativo por software (CONFIAVEL). HERMETICO: zera o
+  #     GALLIUM_DRIVER=virpipe herdado do boot (com LIBGL_ALWAYS_SOFTWARE=1
+  #     ele contradiz e ABORTA o WebKit se o virgl estiver fora) e o
+  #     MESA_LOADER_DRIVER_OVERRIDE. 100% CPU = sem tela preta.
+  run_browser "Olal nativo (WebKit)" env -u MESA_LOADER_DRIVER_OVERRIDE \
+    WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe \
     python3 "$WK" "$URL" && exit 0
 else
   # webkit ausente: instala em 2o plano pro proximo boot virar nativo (4.1 ou 4.0)
@@ -247,13 +266,29 @@ if [ -n "$FF" ] && [ "$GPU_ON" = 1 ] && [ "$HAVE_SHOT" = 1 ]; then
     env MOZ_WEBRENDER=1 MOZ_X11_EGL=1 MOZ_ACCELERATED=1 LIBGL_ALWAYS_SOFTWARE=0 \
     "$FF" --kiosk --profile "$PROF" --no-remote "$URL" && exit 0
 fi
-# 3) FIREFOX por software - o caminho GARANTIDO (identico ao que ja funcionava)
+# 3) FIREFOX por software - o caminho GARANTIDO. Forca GL por SOFTWARE
+#    (LIBGL_ALWAYS_SOFTWARE=1) e zera o GALLIUM_DRIVER=virpipe herdado do boot:
+#    assim NAO passa pelo virgl (que pode estar instavel) - render 100% CPU,
+#    exatamente a config que testei renderizando. So entao e "garantido".
 [ -n "$FF" ] && run_browser "Firefox (software)" \
+  env -u MESA_LOADER_DRIVER_OVERRIDE LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe \
   "$FF" --kiosk --profile "$PROF" --no-remote "$URL" && exit 0
-# 4) CHROMIUM swiftshader em processo unico (ultimo recurso)
-command -v chromium >/dev/null && run_browser "Chromium swiftshader (render ${RSCALE}x)" \
+# 4) CHROMIUM swiftshader em processo unico (ultimo recurso). Em arm64 o
+#    swiftshader e TELA PRETA documentada - so pode rodar com o detector
+#    ativo (que o derruba se nao renderizar). Sem detector, melhor nem tentar.
+[ "$HAVE_SHOT" = 1 ] && command -v chromium >/dev/null && run_browser "Chromium swiftshader (render ${RSCALE}x)" \
   chromium --no-sandbox --kiosk --single-process --ozone-platform=x11 \
   --use-gl=swiftshader --enable-unsafe-swiftshader $DSF_FLAG \
   --user-data-dir="$HOME/.olal-chrome2" "$URL" && exit 0
+
+# ultimo dos ultimos: se TUDO falhou (ex.: perfil corrompido), tenta o Firefox
+# com um perfil NOVO E LIMPO - nunca termina sem tentar renderizar algo.
+if [ -n "$FF" ]; then
+  P2="$HOME/.olal-ff-clean"; rm -rf "$P2"; mkdir -p "$P2"
+  cp -f "$PROF/user.js" "$P2/user.js" 2>/dev/null
+  run_browser "Firefox (perfil limpo)" \
+    env -u MESA_LOADER_DRIVER_OVERRIDE LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe \
+    "$FF" --kiosk --profile "$P2" --no-remote "$URL" && exit 0
+fi
 
 echo "Nenhum navegador renderizou. Rode 'olal-doctor' para diagnosticar."
