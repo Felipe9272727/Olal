@@ -145,10 +145,16 @@ HAVE_SHOT=0; command -v import >/dev/null && command -v convert >/dev/null && HA
 screen_bright(){ import -window root -silent /tmp/olal-probe.png 2>/dev/null \
   && convert /tmp/olal-probe.png -colorspace Gray -resize 1x1 -format '%[fx:int(mean*255)]' info: 2>/dev/null; }
 
+# RELATORIO DE BOOT: cada tentativa/resultado fica gravado. Assim, "funcionou
+# ou nao no aparelho" vira um DADO (olal-doctor mostra), nao um palpite.
+REPORT=/opt/olal/boot-report.txt
+report(){ echo "$(date '+%F %T') $*" >> "$REPORT" 2>/dev/null; }
+report "== boot: $(grep -o 'OLAL_BUILD = "[^"]*"' /opt/olal/shell/index.html 2>/dev/null | cut -d'"' -f2) | detector=$HAVE_SHOT gpu=$GPU_ON =="
+
 # roda um navegador e confirma que RENDEROU (processo vivo + tela nao-preta).
 # $1 = rotulo; resto = comando. Retorna 0 e segura o processo se renderizou.
 run_browser(){ local label="$1"; shift
-  echo ">> tentando: $label"
+  echo ">> tentando: $label"; report "tentando: $label"
   "$@" >/dev/null 2>&1 & local pid=$!
   # IMPORTANTE: o Firefox demora ~15-20s pra renderizar a frio. Por isso a
   # janela do detector vai ate 35s (antes era 12s e MATAVA o Firefox no meio
@@ -158,15 +164,21 @@ run_browser(){ local label="$1"; shift
   local t=0 ok=0 maxt=12
   [ "$HAVE_SHOT" = 1 ] && maxt=35
   while [ $t -lt $maxt ]; do sleep 1; t=$((t+1))
-    kill -0 "$pid" 2>/dev/null || { echo "   ($label caiu)"; return 1; }
+    kill -0 "$pid" 2>/dev/null || { echo "   ($label caiu)"; report "FALHOU: $label (processo caiu em ${t}s)"; return 1; }
     if [ $t -ge 7 ] && [ "$HAVE_SHOT" = 1 ]; then
       local b; b=$(screen_bright)
       if [ -n "$b" ] && [ "$b" -gt 8 ] 2>/dev/null; then ok=1; break; fi
     fi
   done
   [ "$HAVE_SHOT" = 1 ] || { kill -0 "$pid" 2>/dev/null && ok=1; }
-  if [ "$ok" = 1 ]; then echo ">> Olal OS rodando ($label, render OK)."; wait "$pid"; return 0; fi
+  kill -0 "$pid" 2>/dev/null || { echo "   ($label caiu)"; report "FALHOU: $label (processo caiu)"; return 1; }
+  if [ "$ok" = 1 ]; then
+    echo ">> Olal OS rodando ($label, render OK)."
+    report "SUCESSO: $label renderizou (brilho=$(screen_bright 2>/dev/null || echo n/d), t=${t}s)"
+    wait "$pid"; report "sessao encerrada: $label"; return 0
+  fi
   echo "   ($label nao renderizou - tela preta? proximo...)"
+  report "FALHOU: $label (tela preta apos ${maxt}s, brilho=$(screen_bright 2>/dev/null || echo n/d))"
   kill "$pid" 2>/dev/null; pkill -P "$pid" 2>/dev/null; sleep 1; return 1; }
 
 # ---- env de GPU: aprendido do Winlator/GameHub. Se o usuario instalou o
