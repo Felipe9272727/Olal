@@ -373,7 +373,7 @@ function aiHandle(resp){
 /* ===== ponte com o SISTEMA REAL (backend Olal) - faz o Olal ser um OS ===== */
 /* carimbo de versao: aparece embaixo da home. Se NAO mudar depois de atualizar,
    o update nao chegou na interface (VPN bloqueou o git ou cache do navegador). */
-const OLAL_BUILD = "2026-07-01 • boot blindado v12";
+const OLAL_BUILD = "2026-07-02 • IA no nucleo do OS v13";
 window.addEventListener("load",()=>{ const e=document.getElementById("build"); if(e) e.textContent="Olal OS  ·  "+OLAL_BUILD; });
 
 const SYS_API = location.origin;
@@ -1034,7 +1034,12 @@ function appStore(b){
   });
 }
 function appSys(b){
-  b.innerHTML=`<div class="pad"><div id="sysbox" style="background:#0e1a18;border-radius:12px;padding:16px;line-height:1.9">carregando...</div></div>`;
+  b.innerHTML=`<div class="pad"><div id="sysbox" style="background:#0e1a18;border-radius:12px;padding:16px;line-height:1.9">carregando...</div>
+    <div id="aicorebox" style="background:#0d1526;border:1px solid #2BD17A33;border-radius:12px;padding:14px;margin-top:12px;display:none">
+      <div style="font-weight:700;color:#2BD17A;margin-bottom:6px">🧠 Olal AI Core <span id="aicdot" style="font-size:12px;color:#94a3b8"></span></div>
+      <div id="aicmem" style="font-size:13px;color:#cbd5e1;margin-bottom:8px"></div>
+      <div id="aicj" style="font-family:monospace;font-size:11px;line-height:1.6;color:#8fa3bd;max-height:180px;overflow:auto;white-space:pre-wrap"></div>
+    </div></div>`;
   const box=b.querySelector("#sysbox");
   if(SYS_OK){ sysInfo().then(s=>{ box.innerHTML=
     `<div style="font-size:20px;font-weight:700;color:#2BD17A;margin-bottom:8px">${s.os}</div>
@@ -1045,7 +1050,15 @@ function appSys(b){
      <div>Memoria: <b>${s.mem}</b></div>
      <div>Disco: <b>${s.disk}</b></div>
      <div>GPU: <b>${s.gpu||"?"}</b></div>
-     <div>Uptime: <b>${s.uptime}</b></div>`; }).catch(()=>box.textContent="sem backend"); }
+     <div>Uptime: <b>${s.uptime}</b></div>`; }).catch(()=>box.textContent="sem backend");
+    // Olal AI Core: a IA-orgao do sistema prestando contas do que fez
+    fetch(SYS_API+"/api/aicore").then(r=>r.json()).then(a=>{
+      const bx=b.querySelector("#aicorebox"); if(!bx) return; bx.style.display="block";
+      b.querySelector("#aicdot").textContent = a.alive ? "• ativa, cuidando do sistema" : "• parada (reinicie o Olal)";
+      if(a.state && a.state.mem_total_mb)
+        b.querySelector("#aicmem").textContent = "RAM: "+(a.state.mem_total_mb-a.state.mem_avail_mb)+" / "+a.state.mem_total_mb+" MB em uso  (checagem: "+(a.state.ts||"?")+")";
+      b.querySelector("#aicj").textContent = (a.journal&&a.journal.length) ? a.journal.join("\n") : "(nenhuma acao precisou ser tomada ainda - sistema saudavel)";
+    }).catch(()=>{}); }
   else { box.innerHTML=
     `<div style="font-size:20px;font-weight:700;color:#2BD17A;margin-bottom:8px">Olal OS</div>
      <div>Plataforma: <b>${navigator.platform||"Linux"}</b></div>
