@@ -106,7 +106,11 @@ rm -f "$TMPDIR/olal-boot-report.txt" 2>/dev/null
 
 # 4) BOOTA o Olal OS: instala o codigo novo (de DENTRO, via /tmp compartilhado),
 #    sobe o WM + a barra do Olal + a interface em tela cheia.
-proot-distro login debian --shared-tmp -- /bin/bash -c '
+#    A sessao interna vira um SCRIPT em /tmp (compartilhado) e a saida e
+#    CAPTURADA: se aparecer o bug do proot ("fork: Function not implemented",
+#    ENOSYS - comum apos updates de Android/kernel), o boot se REINICIA
+#    sozinho em modo compativel (PROOT_NO_SECCOMP=1) e memoriza a escolha.
+cat > "$TMPDIR/olal-inner.sh" <<'INNER'
   # instala o codigo novo que o Termux deixou em /tmp/olal-deploy
   if [ -d /tmp/olal-deploy/shell ]; then
     mkdir -p /opt/olal/shell
@@ -170,4 +174,29 @@ proot-distro login debian --shared-tmp -- /bin/bash -c '
 
   # ---- interface do Olal em tela cheia (o navegador kiosk) ----
   exec olal-shell
-'
+INNER
+
+SESLOG="$TMPDIR/olal-session.log"; rm -f "$SESLOG"
+run_session(){
+  if [ -f "$HOME/.olal-noseccomp" ]; then
+    echo ">> proot em MODO COMPATIVEL (PROOT_NO_SECCOMP=1 - contorna o bug de fork/ENOSYS)."
+    PROOT_NO_SECCOMP=1 proot-distro login debian --shared-tmp -- /bin/bash /tmp/olal-inner.sh 2>&1 | tee -a "$SESLOG"
+  else
+    proot-distro login debian --shared-tmp -- /bin/bash /tmp/olal-inner.sh 2>&1 | tee -a "$SESLOG"
+  fi
+}
+run_session
+# BUG DO PROOT (kernels Android novos): fork() devolve ENOSYS e TUDO morre
+# ("fork: Function not implemented" / "XIO: fatal IO error 38"). Se detectado,
+# ativa o modo compativel PERMANENTEMENTE e reinicia a sessao AGORA.
+if [ ! -f "$HOME/.olal-noseccomp" ] && \
+   grep -qiE "Function not implemented|fatal IO error 38" "$SESLOG" 2>/dev/null; then
+  echo ""
+  echo ">> !! BUG DO PROOT DETECTADO (fork/ENOSYS - comum apos update do Android)."
+  echo ">> Ativando modo compativel e reiniciando o Olal automaticamente..."
+  touch "$HOME/.olal-noseccomp"
+  ( yes | timeout 90 pkg install proot >/dev/null 2>&1 ) || true   # tenta proot corrigido
+  pkill -f "termux-x11 :0" 2>/dev/null; termux-x11 :0 >/dev/null 2>&1 &
+  sleep 2
+  run_session
+fi
