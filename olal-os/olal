@@ -5,6 +5,11 @@
 #  A interface do Olal E o sistema - nao e um launcher.
 # ============================================================
 
+# WAKE-LOCK: impede o Android de CONGELAR/MATAR o Termux em 2o plano
+# (phantom process killer) - outra causa de "funciona uns minutos e morre"
+# (a sessao caiu apos ~1223 requests X no aparelho do usuario). Best-effort.
+termux-wake-lock 2>/dev/null || true
+
 # 0) AUTO-ATUALIZA do GitHub e PREPARA o deploy num /tmp compartilhado.
 SRC="$HOME/Olal"
 DEPLOY="$TMPDIR/olal-deploy"
