@@ -93,6 +93,17 @@ done
 
 echo ">> Abra o app Termux:X11 para ver o Olal OS."
 
+# RELATORIO NO TERMINAL: o boot grava cada passo em /tmp/olal-boot-report.txt
+# (compartilhado). Imprime aqui no Termux ~75s depois - VISIVEL mesmo se a
+# tela do X estiver preta. Se a tela ficar preta, TIRE PRINT DESTE TERMINAL.
+rm -f "$TMPDIR/olal-boot-report.txt" 2>/dev/null
+( sleep 75
+  echo ""
+  echo "========== RELATORIO DO BOOT (o que aconteceu la dentro) =========="
+  cat "$TMPDIR/olal-boot-report.txt" 2>/dev/null || echo "(sem relatorio - o olal-shell nem chegou a rodar)"
+  echo "===================================================================="
+  echo "  Tela preta? Tire um PRINT deste terminal e mande." ) &
+
 # 4) BOOTA o Olal OS: instala o codigo novo (de DENTRO, via /tmp compartilhado),
 #    sobe o WM + a barra do Olal + a interface em tela cheia.
 proot-distro login debian --shared-tmp -- /bin/bash -c '

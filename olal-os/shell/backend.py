@@ -175,6 +175,24 @@ def ai_proxy(prompt):
     except Exception as e:
         return {"text": "", "error": str(e)}
 
+def aicore_status():
+    """estado do Olal AI Core (a IA-orgao do sistema) + diario de acoes."""
+    st, journal, alive = {}, [], False
+    try:
+        st = json.loads(open("/opt/olal/ai-state.json").read())
+    except Exception:
+        pass
+    try:
+        journal = open("/opt/olal/ai-journal.txt", errors="ignore").read().splitlines()[-12:]
+    except Exception:
+        pass
+    try:
+        out = subprocess.check_output(["pgrep", "-f", "aicore.py"], text=True, timeout=3)
+        alive = bool(out.strip())
+    except Exception:
+        alive = False
+    return {"alive": alive, "state": st, "journal": journal}
+
 def listdir(path):
     path = os.path.abspath(os.path.expanduser(path or HOME))
     try:
@@ -205,6 +223,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query)
         if u.path == "/api/sysinfo":  return self._json(sysinfo())
+        if u.path == "/api/aicore":   return self._json(aicore_status())
         if u.path == "/api/apps":     return self._json(listapps())
         if u.path == "/api/windows":  return self._json(windows())
         if u.path == "/api/ls":       return self._json(listdir(q.get("path",[HOME])[0]))

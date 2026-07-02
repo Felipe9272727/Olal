@@ -117,6 +117,26 @@ for RD in \
 done
 [ "$FOUND_RPT" = 0 ] && echo "  (sem relatorio ainda - roda ./olal uma vez que ele grava sozinho)"
 
+hr "7) TESTE DE RENDER HEADLESS (por que o Firefox morre? sem precisar do X)"
+if command -v proot-distro >/dev/null 2>&1; then
+  echo "  rodando firefox headless dentro do Debian (ate 60s)..."
+  HL=$(timeout 90 proot-distro login debian -- bash -lc '
+    rm -f /tmp/olal-hl.png
+    timeout 60 env -u DISPLAY -u GALLIUM_DRIVER -u MESA_LOADER_DRIVER_OVERRIDE \
+      MOZ_FAKE_NO_SANDBOX=1 firefox-esr --headless --screenshot /tmp/olal-hl.png \
+      "file:///opt/olal/shell/index.html" 2>&1 | tail -6
+    if [ -s /tmp/olal-hl.png ]; then echo "HEADLESS_OK $(stat -c%s /tmp/olal-hl.png)"; else echo "HEADLESS_FALHOU"; fi
+  ' 2>/dev/null)
+  echo "$HL" | sed 's/^/    /'
+  if echo "$HL" | grep -q HEADLESS_OK; then
+    ok "o Firefox RENDERIZA a interface no seu aparelho (o problema e X11/WM, nao o navegador)"
+  else
+    bad "o Firefox NAO renderizou nem headless - as linhas acima dizem o motivo exato"
+  fi
+else
+  echo "  (proot-distro nao encontrado)"
+fi
+
 hr "Resumo"
 echo "  Se (1) e (2) estao OK mas (3) mostra versao velha no Debian, rode:"
 echo "      cd ~/Olal && git reset --hard origin/main && cd olal-os && ./olal"

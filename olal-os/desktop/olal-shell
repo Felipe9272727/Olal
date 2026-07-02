@@ -49,6 +49,11 @@ else rm -f "/usr/local/bin/olal-gpu-boost.new"; fi
 grep -o 'OLAL_BUILD = "[^"]*"' /opt/olal/shell/index.html 2>/dev/null | sed 's/OLAL_BUILD = />> versao da interface: /'
 pkill -f "olal/shell/backend.py" 2>/dev/null
 ( cd /opt/olal/shell && OLAL_PORT=8080 python3 backend.py >/dev/null 2>&1 & )
+# OLAL AI CORE: a IA como ORGAO do sistema (nao um chat). Servico residente
+# que cuida de RAM/CPU/saude sozinho e presta contas no diario (app Sistema).
+pkill -f "olal/shell/aicore.py" 2>/dev/null
+[ -f /opt/olal/shell/aicore.py ] && ( cd /opt/olal/shell && setsid python3 aicore.py >/dev/null 2>&1 & ) \
+  && echo ">> Olal AI Core online (gerencia memoria/CPU/saude do OS)."
 # ESPERA o backend responder de verdade (num celular lento o python demora a
 # subir; com 'sleep 1' fixo o navegador abria ANTES e pegava "conexao recusada"
 # = pagina de erro/branca em vez da UI). Poll ate ~20s.
@@ -148,7 +153,10 @@ screen_bright(){ import -window root -silent /tmp/olal-probe.png 2>/dev/null \
 # RELATORIO DE BOOT: cada tentativa/resultado fica gravado. Assim, "funcionou
 # ou nao no aparelho" vira um DADO (olal-doctor mostra), nao um palpite.
 REPORT=/opt/olal/boot-report.txt
-report(){ echo "$(date '+%F %T') $*" >> "$REPORT" 2>/dev/null; }
+# grava tambem em /tmp (compartilhado com o Termux): o ./olal imprime esse
+# relatorio NO TERMINAL do Termux - visivel mesmo quando o X esta preto.
+report(){ echo "$(date '+%F %T') $*" >> "$REPORT" 2>/dev/null
+  echo "$(date '+%F %T') $*" >> /tmp/olal-boot-report.txt 2>/dev/null; }
 report "== boot: $(grep -o 'OLAL_BUILD = "[^"]*"' /opt/olal/shell/index.html 2>/dev/null | cut -d'"' -f2) | detector=$HAVE_SHOT gpu=$GPU_ON =="
 
 # roda um navegador e confirma que RENDEROU (processo vivo + tela nao-preta).
