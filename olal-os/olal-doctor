@@ -117,7 +117,24 @@ for RD in \
 done
 [ "$FOUND_RPT" = 0 ] && echo "  (sem relatorio ainda - roda ./olal uma vez que ele grava sozinho)"
 
-hr "7) TESTE DE RENDER HEADLESS (por que o Firefox morre? sem precisar do X)"
+hr "7) BUG DO PROOT (fork/ENOSYS) - causa do 'fork: Function not implemented'"
+if command -v proot-distro >/dev/null 2>&1; then
+  FK=$(timeout 40 proot-distro login debian -- bash -c \
+    'n=0; for i in 1 2 3 4 5 6 7 8 9 10; do (true) 2>/dev/null && n=$((n+1)); done; echo FORKS_$n' 2>&1 | tail -1)
+  if echo "$FK" | grep -q "FORKS_10"; then
+    ok "fork funciona no proot (modo normal)"
+  else
+    bad "fork QUEBRADO no proot ($FK) - e o bug de kernel Android novo"
+    echo "     O ./olal ja detecta e ativa o modo compativel sozinho. Fixes manuais:"
+    echo "       1) pkg upgrade proot proot-distro   (versao corrigida)"
+    echo "       2) ja ativo automatico: PROOT_NO_SECCOMP=1 (~/.olal-noseccomp)"
+    echo "       3) (avancado, via PC) adb shell settings put global \\"
+    echo "          settings_enable_monitor_phantom_procs false"
+  fi
+  [ -f "$HOME/.olal-noseccomp" ] && echo "  (modo compativel ATIVO neste aparelho)"
+fi
+
+hr "8) TESTE DE RENDER HEADLESS (por que o Firefox morre? sem precisar do X)"
 if command -v proot-distro >/dev/null 2>&1; then
   echo "  rodando firefox headless dentro do Debian (ate 60s)..."
   HL=$(timeout 90 proot-distro login debian -- bash -lc '
